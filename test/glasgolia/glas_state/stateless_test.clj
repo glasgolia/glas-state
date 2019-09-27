@@ -5,7 +5,7 @@
 
 (deftest event-type-tests
   (testing "event-type handling"
-    (is (= :kw/test (event-type :kw/test) ))
+    (is (= :kw/test (event-type :kw/test)))
     (is (= :blabla (event-type [:blabla :extra])))
     (is (= :the-type (event-type {:type :the-type :a :b})))
     (is (= "Peter" (event-type "Peter")))
@@ -17,59 +17,110 @@
 (deftest create-initial-transition-state-tests
   (testing "Initial for leaf state"
     (let [state-def {:entry :lets-enter
-                     :on [:on-first :on-second]}]
+                     :on    [:on-first :on-second]}]
       (is (= {:actions [:lets-enter]}
-             (create-initial-transition-state state-def )))))
+             (create-initial-transition-state state-def)))))
 
   (testing "Initial for non-leaf state"
     (let [state-def {:initial :state-2
-                     :states {:state-1 {}
-                              :state-2 {:entry [:a :b [:c]]
-                                        :on [:on-state2]}}}]
+                     :states  {:state-1 {}
+                               :state-2 {:entry [:a :b [:c]]
+                                         :on    [:on-state2]}}}]
       (is (= {:value :state-2 :actions [:a :b :c]}
-             (create-initial-transition-state state-def )))))
+             (create-initial-transition-state state-def)))))
   (testing "Initial for hierarchy state"
     (let [state-def {:initial :state-2
                      :states  {:state-1 {}
                                :state-2 {:initial :state-2-2
                                          :entry   :entry-state-2
-                                         :on [:a :b]
+                                         :on      [:a :b]
                                          :states  {:state-2-1 {}
-                                                   :state-2-2 {:entry     :entry-state-2-2}
+                                                   :state-2-2 {:entry :entry-state-2-2}
                                                    }}}}]
-      (is (= {:value {:state-2 :state-2-2}  :actions [:entry-state-2 :entry-state-2-2] }
-              (create-initial-transition-state state-def )))))
+      (is (= {:value {:state-2 :state-2-2} :actions [:entry-state-2 :entry-state-2-2]}
+             (create-initial-transition-state state-def)))))
   (testing "Initial for Parallel state"
-    (let [state-def {:type :parallel
-                     :states {:bold {:initial :off
-                                     :states {:on {:entry [:entry-bold-on]}
-                                              :off {}}}
+    (let [state-def {:type   :parallel
+                     :states {:bold      {:initial :off
+                                          :states  {:on  {:entry [:entry-bold-on]}
+                                                    :off {}}}
                               :underline {:initial :on
-                                          :states {:on {:entry :entry-underline-on}
-                                                   :off {:entry :entry-underline-off}}}}}]
-      (is (= {:value {:bold {:value :off} :underline {:value :on}}
+                                          :states  {:on  {:entry :entry-underline-on}
+                                                    :off {:entry :entry-underline-off}}}}}]
+      (is (= {:value   {:bold {:value :off} :underline {:value :on}}
               :actions [:entry-underline-on]}
              (create-initial-transition-state state-def))))))
+
+(deftest create-machine-test
+  (testing "Create Machine"
+    (let [m-def {:initial :a
+                 :context {:init-context "test"}
+                 :states  {:a {}
+                           :b {}}}
+          options {:guards {:g-a :guard-a-value}}
+          expected {:machine-def m-def
+                    :guards      (:guards options)
+                    :actions     nil
+                    :activities  nil
+                    :context     (:context m-def)}]
+      (is (= expected (machine m-def options))))))
 (deftest start-machine-test
   (testing "minimal machine"
     (let [machine-def {:initial :start
                        :context {:name "Peter"}
-                       :states {:start {:entry :on-entry-start}
-                                :stop {}}}]
+                       :states  {:start {:entry :on-entry-start}
+                                 :stop  {}}}]
       (is (= {:value :start :actions [:on-entry-start] :context {:name "Peter"}}
              (start-machine (machine machine-def)))))))
 
 (deftest find-valid-handler-test
   (testing "event handlers handling"
-    (let[]
+    (let []
       (is (= {:target :new-target} (find-valid-handler :new-target {} {} :event)))
       (is (nil? (find-valid-handler nil {} {} :event)))
       (is (= {:target :new-target} (find-valid-handler [:new-target] {} {} :event)))
       (is (= {:target :second :cond :check-second}
              (find-valid-handler
-                  [{:target :first :cond :check-first}
-                   {:target :second :cond :check-second}]
-                  {:check-first (fn [context event] (= {} context))
-                   :check-second (fn [context event] (:take-this context))}
-                  {:take-this true}
-                  :the-event))))))
+               [{:target :first :cond :check-first}
+                {:target :second :cond :check-second}]
+               {:check-first  (fn [context event] (= {} context))
+                :check-second (fn [context event] (:take-this context))}
+               {:take-this true}
+               :the-event))))))
+
+(def test-machine-1
+  (machine
+    {:id      :test-machine-1
+     :initial :a
+     :context {:name  "Peter"
+               :years 47}
+     :states  {:a {:exit  :exit-a
+                   :entry :enter-a
+                   :on    {:switch :b}}
+               :b {:entry :enter-b
+                   :exit  :exit-b
+                   :on    {:switch :c}}
+               :c {:entry   :enter-c
+                   :exit    :exit-c
+                   :on      {:switch :a}
+                   :initial :c-1
+                   :states  {:c-1 {:entry :entry-c1
+                                   :exit  :exit-c1
+                                   :on    {:switch :c-2}}
+                             :c-2 {:entry :entry-c2
+                                   :exit  :exit-c2
+                                   }}}}}
+    {}))
+
+(deftest transition-machine-test
+  (testing "Transition tests"
+    (let [state (start-machine test-machine-1)
+          state (transition-machine test-machine-1 state :switch)
+          _ (is (= {:value :b :actions [:exit-a :enter-b]} state))
+          state (transition-machine test-machine-1 state :switch)
+          _ (is (= {:value {:c :c-1} :actions [:exit-b :enter-c :entry-c1]} state))
+          state (transition-machine test-machine-1 state :switch)
+          _ (is (= {} state))
+
+
+          ])))
