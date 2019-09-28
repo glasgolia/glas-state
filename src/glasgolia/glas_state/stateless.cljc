@@ -162,42 +162,9 @@
   (let [value (:value current-state)
         machine-def (:machine-def machine)
         guards (:guards machine)
-        context (:context current-state)]
-    (create-transition-state machine-def guards value context event)))
-
-
-;(defn create-transition-state [state-def value event]
-;  (let [etype (event-type event)
-;        m-states (:states state-def)]
-;    (if (map? value)
-;      ; We have sub states
-;      (let [[state-id substate-id] (first value)
-;            sub-result (create-transition-state (get m-states state-id) substate-id event)]
-;        (if (:value sub-result)
-;          {:value   {state-id (:value sub-result)}
-;           :actions (:actions sub-result)}
-;          ;sub state did not handle the event, we have to handle it on this level
-;          (let [this-result (create-transition-state state-def state-id event)
-;                this-state (get m-states state-id)
-;                new-state (get m-states (:value this-result))]
-;            {:value   (:value this-result)
-;             :actions (into [] (concat (:actions sub-result) (:exit this-state) (:entry new-state)))})
-;          ))
-;
-;      ; We are on a leaf state
-;
-;      (let [this-m-state (get m-states value)
-;            this-on-event (get-in this-m-state [:on etype])
-;            this-exit-actions (:exit this-m-state)]
-;        (if this-on-event
-;          (let [new-state (get m-states this-on-event)
-;                entry-actions (:entry new-state)
-;                new-state-not-leaf? (:states new-state)]
-;            (if new-state-not-leaf?
-;              (let [init-result (create-initial-transition-state new-state)]
-;                {:value   {this-on-event (:value init-result)}
-;                 :actions (into [] (concat this-exit-actions entry-actions (:actions init-result)))})
-;              {:value   this-on-event
-;               :actions (into [] (concat this-exit-actions entry-actions))}))
-;          {:actions this-exit-actions})))))
+        context (:context current-state)
+        tried-trans (create-transition-state machine-def guards value context event)]
+    (if (:value tried-trans)
+      tried-trans
+      (assoc current-state :actions []))))
 
