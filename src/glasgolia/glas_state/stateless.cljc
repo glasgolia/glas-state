@@ -47,7 +47,7 @@
   (let [sub-results (map (fn [[key sub-state]]
                            [key (create-initial-transition-state sub-state)]) states)
         sub-values (into {} (map (fn [[k v]]
-                                   [k (dissoc v :actions)]) sub-results))
+                                   [k (:value v)]) sub-results))
         sub-actions (action-array (map (fn [[_ v]] (:actions v)) sub-results))]
     {:value   sub-values
      :actions (action-array [entry sub-actions])})
@@ -132,14 +132,30 @@
       ; We could not handle the event on this level, just return the exit actions
       {:actions (action-array exit-actions)})))
 
+(declare create-transition-state)
+
 (defn create-transition-state-non-leaf [state-def guards value context event]
   (let [sub-state-defs (:states state-def)
-        sub-results ]))
+        sub-results (into {} (map (fn [[k v]]
+                            [k (create-transition-state (get sub-state-defs k) guards v context event)])
+                          value))
+        sub-actions (action-array (into [] (map (fn [v] (:actions v)) (vals sub-results))))
+        values? (not-empty (filter (fn [v] (:value v)) (vals sub-results)))]
+    (if values?
+      ;We have sub values, so we can stop...
+      {:value   (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) sub-results))
+       :actions sub-actions}
+      ;We have to handle the event on this level...
+       (let [all-sub-values (keys value)
+             all-sub-result (map (fn[v] (create-transition-state-leaf state-def guards v context event)) all-sub-values)
+             all-sub-actions (into [](reduce concat (map (fn [r] (:actions r)) all-sub-result)))
+             this-result (first all-sub-result)
+             this-result (assoc this-result :actions (action-array [sub-actions all-sub-actions]))]
+         this-result))))
 
 (defn create-transition-state [state-def guards value context event]
-
   (if (map? value)
-    {:not-yet :done}
+    (create-transition-state-non-leaf state-def guards value context event)
     (create-transition-state-leaf state-def guards value context event)))
 
 (defn transition-machine [machine current-state event]

@@ -47,7 +47,7 @@
                               :underline {:initial :on
                                           :states  {:on  {:entry :entry-underline-on}
                                                     :off {:entry :entry-underline-off}}}}}]
-      (is (= {:value   {:bold {:value :off} :underline {:value :on}}
+      (is (= {:value   {:bold :off :underline :on}
               :actions [:entry-underline-on]}
              (create-initial-transition-state state-def))))))
 
@@ -96,7 +96,8 @@
                :years 47}
      :states  {:a {:exit  :exit-a
                    :entry :enter-a
-                   :on    {:switch :b}}
+                   :on    {:switch :b
+                           :to-d :d}}
                :b {:entry :enter-b
                    :exit  :exit-b
                    :on    {:switch :c}}
@@ -109,7 +110,25 @@
                                    :on    {:switch :c-2}}
                              :c-2 {:entry :entry-c2
                                    :exit  :exit-c2
-                                   }}}}}
+                                   }}}
+               :d {:entry :entry-d
+                   :exit :exit-d
+                   :type :parallel
+                   :on {:to-c :c}
+                   :states {:p1 {:initial :on
+                                 :entry :entry-p1
+                                 :exit :exit-p1
+                                 :states {:on {:on {:switch :off}}
+                                          :off {:on {:switch :on}}}}
+                            :p2 {:initial :off
+                                 :entry :entry-p2
+                                 :exit :exit-p2
+                                 :states {:on {:entry :p2-on-entry
+                                               :exit :p2-on-exit
+                                               :on {:switch :off}}
+                                          :off {:entry :p2-off-entry
+                                                :exit :p2-off-exit
+                                                :on {:switch :on}}}}}}}}
     {}))
 
 (deftest transition-machine-test
@@ -120,7 +139,17 @@
           state (transition-machine test-machine-1 state :switch)
           _ (is (= {:value {:c :c-1} :actions [:exit-b :enter-c :entry-c1]} state))
           state (transition-machine test-machine-1 state :switch)
-          _ (is (= {} state))
-
-
+          _ (is (= {:value {:c :c-2} :actions [:exit-c1 :entry-c2]} state))
+          state (transition-machine test-machine-1 state :switch)
+          _ (is (= {:value :a :actions [:exit-c2 :exit-c :enter-a]} state))
+          state (transition-machine test-machine-1 state :to-d)
+          _ (is (= {:value {:d {:p1 :on
+                                :p2 :off}}
+                    :actions [:exit-a :entry-d :entry-p1 :entry-p2 :p2-off-entry]} state))
+          state (transition-machine test-machine-1 state :switch)
+          _ (is (= {:value {:d {:p1 :off
+                                :p2 :on}}
+                    :actions [:p2-off-exit :p2-on-entry]} state))
+          state (transition-machine test-machine-1 state :to-c)
+          _(is (= {:value {:c :c-1} :actions [:p2-on-exit :exit-p1 :exit-p2 :exit-d :enter-c :entry-c1]} state))
           ])))
