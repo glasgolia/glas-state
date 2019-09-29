@@ -63,13 +63,18 @@
     :parallel (create-initial-parallel-transition-state state-def)
     :non-leaf (create-initial-non-leaf-transition-state state-def)))
 
+
+(defn default-catch-all-action [context event meta]
+  (println "undefined-action called:" (:action meta)))
+
 (defn machine
   ([machine-def options]
    {:machine-def machine-def
     :guards      (:guards options)
     :actions     (:actions options)
     :activities  (:activities options)
-    :context     (or (:context options) (:context machine-def) {})})
+    :context     (or (:context options) (:context machine-def) {})
+    :catch-all-action (or (:catch-all-action options) default-catch-all-action)})
   ([machine-def]
    (machine machine-def {})))
 

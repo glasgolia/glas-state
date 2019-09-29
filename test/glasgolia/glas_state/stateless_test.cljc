@@ -53,7 +53,8 @@
 
 (deftest create-machine-test
   (testing "Create Machine"
-    (let [m-def {:initial :a
+    (let [
+          m-def {:initial :a
                  :context {:init-context "test"}
                  :states  {:a {}
                            :b {}}}
@@ -62,7 +63,8 @@
                     :guards      (:guards options)
                     :actions     nil
                     :activities  nil
-                    :context     (:context m-def)}]
+                    :context     (:context m-def)
+                    :catch-all-action default-catch-all-action}]
       (is (= expected (machine m-def options))))))
 (deftest start-machine-test
   (testing "minimal machine"
