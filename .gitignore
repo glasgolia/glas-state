@@ -10,4 +10,6 @@ pom.xml.asc
 /.nrepl-port
 .hgignore
 .hg/
-/.idea/ClojureProjectResolveSettings.xml
+.idea/
+.idea/libraries/
+

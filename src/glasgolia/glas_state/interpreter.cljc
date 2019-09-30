@@ -1,5 +1,8 @@
 (ns glasgolia.glas-state.interpreter
-  (:require [glasgolia.glas-state.stateless :as sl]))
+  (:require [glasgolia.glas-state.stateless :as sl]
+            [clojure.core.async
+             :as a
+             :refer [<! <!! >!! >! go chan close! close!]]))
 
 
 (defn assign [context-update-fn]
@@ -81,3 +84,29 @@
                            (dissoc :actions)
                            (assoc :context new-context)))))
   (:value ((:read storage))))
+
+(def send-chan (chan 1))
+
+(defn my-send [event]
+  (go (>! send-chan event)
+      (println "done sending " event))
+  nil)
+
+(defn start []
+  (go
+    (loop [in (<! send-chan)]
+      (when in
+        (println "Got " in)
+        (recur (<! send-chan)))))
+  nil)
+(defn close []
+  (close! send-chan))
+
+(comment
+  (my-send 1)
+  (my-send 2)
+  (my-send 3)
+  (my-send nil)
+  (start)
+  (close)
+  )
