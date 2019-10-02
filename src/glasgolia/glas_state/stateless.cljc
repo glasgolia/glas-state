@@ -127,7 +127,7 @@
             ;If internal don't return exit/entry actions
             (if internal?
               ; internal to self
-              {:value new-state-value}
+              {:value new-state-value }
               ; to self, not internal
               {:value   new-state-value
                :actions (action-array [exit-actions new-state-entry])}))

@@ -1,22 +1,35 @@
 (ns glasgolia.glas-state.interpreter
   (:require [glasgolia.glas-state.stateless :as sl]
-            [clojure.core.async
-             :as a
-             :refer [<! <!! >!! >! go chan close! close!]]))
-
+            [clojure.core.async :as as]))
 
 (defn assign [context-update-fn]
   {:type     :glas-state/assign-context
    :assigner context-update-fn})
 
-(defn create-atom-sc-storage [atom-storage]
-  {:swap
-   (fn [swap-fn]
-     (swap! atom-storage swap-fn))
-   :read
-   (fn []
-     @atom-storage)})
-(defn sync-action-handler [{:keys [machine] :as inst} context action event meta]
+(defn send
+  ([event delay-context]
+   {:type          :glas-state/send
+    :event         event
+    :delay-context delay-context})
+  ([event]
+   {:type  :glas-state/send
+    :event event}))
+
+(def interpreter-logger
+  (fn [{:keys [prev new prev-context new-context]}]
+    (let [prev-value (:value prev)
+          new-value (:value new)
+          prev-context (:context prev)
+          new-context (:context new)]
+      (when (not= prev-value new-value)
+        (println "VALUE: " new-value " <-- " prev-value))
+      (when (not= prev-context new-context)
+        (println "CONTEXT: " new-context " <-- " prev-context)))))
+(defn atom-store [store-atom]
+  (fn [{:keys [new]}]
+    (reset! store-atom new)))
+
+(defn sync-action-handler [{:keys [machine send-channel] :as inst} context action event meta]
   (let []
     (cond
       (fn? action) (do (action context event meta) context)
@@ -33,6 +46,13 @@
                           ;We have an internal action
                           (case type
                             :glas-state/assign-context ((:assigner action) context event meta)
+                            :glas-state/send (let [event (:event action)
+                                                   delay-context (:delay-context action)]
+                                               (if delay-context
+                                                 (as/go (as/>! @send-channel {:event         event
+                                                                             :delay-context delay-context}))
+                                                 (as/go (as/>! @send-channel {:event event})))
+                                               context)
                             (do
                               (println "Unknown internal action: " action)
                               context))
@@ -41,17 +61,18 @@
                             (catch-all-action context event meta)
                             context))))
       :else context)))
-
-
-
 (defn interpreter [the-machine]
-  {:storage        (create-atom-sc-storage (atom nil))
-   :machine        the-machine
-   :action-handler sync-action-handler})
-
-(defn context [{:keys [storage]}]
-  (:context ((:read storage))))
-
+  (let [result {:storage        (atom {})
+                :machine        the-machine
+                :send-channel   (atom nil)
+                :listeners      (atom [])
+                :delayed-events (atom {})
+                :action-handler sync-action-handler}]
+    result))
+(defn notify-listeners [{:keys [listeners]} prev-state new-state]
+  (let [notify-data {:prev prev-state :new new-state}]
+    (doseq [l @listeners]
+      (l notify-data))))
 (defn- send-actions [inst context actions event new-state-value]
   (let [action-handler (:action-handler inst)]
     (loop [c context
@@ -65,48 +86,129 @@
       )
     ))
 
-(defn start [{:keys [storage machine] :as inst}]
-  ((:swap storage) (fn [_prev-state]
-                     (let [{:keys [actions context value] :as state} (sl/start-machine machine)
-                           new-context (send-actions inst context actions :glas-state/start-machine value)]
-                       (-> state
-                           (dissoc :actions)
-                           (assoc :context new-context)))))
-  (:value ((:read storage))))
+(defn init-service [{:keys [storage machine] :as inst}]
+  (swap! storage (fn [prev-state]
+                   (let [{:keys [actions context value] :as state} (sl/start-machine machine)
+                         new-context (send-actions inst context actions :glas-state/start-machine value)
+                         new-state (-> state
+                                       (dissoc :actions)
+                                       (assoc :context new-context))]
+                     (notify-listeners inst prev-state new-state)
+                     new-state)))
+  (:value @storage))
+
+(defn handle-event [{:keys [storage machine send-channel] :as inst} {:keys [event waiting-channel delay-context]}]
+  (if delay-context
+    (let [id (or (:id delay-context) event)
+          delay (:delay delay-context)
+          cancel-channel (as/chan 1)
+          sc @send-channel]
+      (swap! (:delayed-events inst) assoc id cancel-channel)
+      (as/go
+        (let [[v _] (as/alts! [(as/timeout delay) cancel-channel])]
+          (when (and sc (not v))
+            (as/>! sc {:event event}))
+          (as/close! cancel-channel)
+          (swap! (:delayed-events inst) dissoc id)))
+      )
+    (swap! storage (fn [prev-state]
+                     (let [context (:context prev-state)
+                           new-state (sl/transition-machine machine prev-state event)
+                           new-context (send-actions inst context (:actions new-state) event (:value new-state))
+
+                           new-state (-> new-state
+                                         (dissoc :actions)
+                                         (assoc :context new-context))]
+                       (notify-listeners inst prev-state new-state)
+                       new-state))))
+  (when waiting-channel
+    (as/close! waiting-channel)))
 
 
-(defn send-event [{:keys [storage machine] :as inst} event]
-  ((:swap storage) (fn [current-state]
-                     (let [context (:context current-state)
-                           new-state (sl/transition-machine machine current-state event)
-                           new-context (send-actions inst context (:actions new-state) event (:value new-state))]
-                       (-> new-state
-                           (dissoc :actions)
-                           (assoc :context new-context)))))
-  (:value ((:read storage))))
+(defn start [{:keys [send-channel] :as service}]
+  (let [sc (as/chan 20)]
+    (reset! send-channel sc)
+    (as/go-loop [event (as/<! sc)]
+      (if event
+        (do (handle-event service event)
+            (recur (as/<! sc)))
+        (do (as/close! sc)
+            (reset! send-channel nil))
+        )
 
-(def send-chan (chan 1))
+      )
+    (init-service service)
+    service))
 
-(defn my-send [event]
-  (go (>! send-chan event)
-      (println "done sending " event))
-  nil)
+(defn close [{:keys [send-channel delayed-events] :as service}]
+  (swap! delayed-events (fn [events]
+                                     (doseq [[_ chan] events]
+                                       (as/close! chan))
+                                     {}))
+  (as/close! @send-channel)
+  (reset! send-channel nil))
 
-(defn start []
-  (go
-    (loop [in (<! send-chan)]
-      (when in
-        (println "Got " in)
-        (recur (<! send-chan)))))
-  nil)
-(defn close []
-  (close! send-chan))
+(defn add-change-listener [interpreter fun]
+  (swap! (:listeners interpreter) (fn [old] (conj old fun)))
+  interpreter)
+
+
+(defn send-event
+  ([{:keys [send-channel]} event]
+   (if @send-channel
+     (as/>!! @send-channel {:event event})
+     (throw (Exception. "Service is not started"))))
+  ([{:keys [send-channel]} event delay-context]
+   (when (not @send-channel) (throw (Exception. "Service is not started")))
+   (as/>!! @send-channel {:event event :delay-context delay-context})))
+
+(defn send-event-wait [{:keys [send-channel]} event]
+  (if @send-channel
+    (let [wait-channel (as/chan 1)]
+      (as/>!! @send-channel {:event           event
+                             :waiting-channel wait-channel})
+      (as/<!! wait-channel))
+    (throw (Exception. "Service is not started"))))
+
+(defn state-value [{:keys [storage]}]
+  (:value @storage))
 
 (comment
-  (my-send 1)
-  (my-send 2)
-  (my-send 3)
-  (my-send nil)
-  (start)
-  (close)
+  (def delay-test-machine (sl/machine {:initial :red
+                                       :context {:count 0}
+                                       :states  {:red    {:on    {:timer [{:target :green
+                                                                           :cond   (fn [c e] (< (:count c 0) 2))}
+                                                                          :done]}
+                                                          :entry [(assign (fn [c e m]
+                                                                            (update c :count inc)))
+                                                                  (send :timer {:delay 1000 :id :the-timer})]}
+                                                 :green  {:on    {:timer :orange}
+                                                          :entry (send :timer {:delay 1000 :id :the-timer})}
+                                                 :orange {:on    {:timer :red}
+                                                          :entry (send :timer {:delay 1000 :id :the-timer})}
+                                                 :done   {:type :final}}}))
+
+  (def inst (let [state (atom {})]
+              (-> (interpreter delay-test-machine)
+                  (add-change-listener interpreter-logger)
+                  (add-change-listener (atom-store state))
+                  (start))
+              ))
+  (send-event inst :timer)
+  (send-event inst :timer {:delay 5000})
+  (close inst)
+  (start inst)
+  (prn @(:delayed-events inst))
+  (state-value inst)
+  (prn inst)
+  (let [state (atom {})
+        inst (-> (interpreter delay-test-machine)
+                 (add-change-listener interpreter-logger)
+                 (add-change-listener (atom-store state))
+                 (start))]
+    (println "started")
+    (send-event inst :timer)
+    (Thread/sleep 2000)
+    (println "done"))
+
   )
