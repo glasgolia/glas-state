@@ -19,7 +19,7 @@
     (let [state-def {:entry :lets-enter
                      :on    [:on-first :on-second]}]
       (is (= {:actions [:lets-enter]}
-             (create-initial-transition-state state-def)))))
+             (create-initial-transition-state "" state-def)))))
 
   (testing "Initial for non-leaf state"
     (let [state-def {:initial :state-2
@@ -27,7 +27,7 @@
                                :state-2 {:entry [:a :b [:c]]
                                          :on    [:on-state2]}}}]
       (is (= {:value :state-2 :actions [:a :b :c]}
-             (create-initial-transition-state state-def)))))
+             (create-initial-transition-state "" state-def)))))
   (testing "Initial for hierarchy state"
     (let [state-def {:initial :state-2
                      :states  {:state-1 {}
@@ -38,18 +38,21 @@
                                                    :state-2-2 {:entry :entry-state-2-2}
                                                    }}}}]
       (is (= {:value {:state-2 :state-2-2} :actions [:entry-state-2 :entry-state-2-2]}
-             (create-initial-transition-state state-def)))))
+             (create-initial-transition-state "" state-def)))))
   (testing "Initial for Parallel state"
     (let [state-def {:type   :parallel
                      :states {:bold      {:initial :off
                                           :states  {:on  {:entry [:entry-bold-on]}
-                                                    :off {}}}
+                                                    :off {:type :final}}}
                               :underline {:initial :on
-                                          :states  {:on  {:entry :entry-underline-on}
+                                          :states  {:on  {:entry :entry-underline-on
+                                                          :type :final}
                                                     :off {:entry :entry-underline-off}}}}}]
       (is (= {:value   {:bold :off :underline :on}
-              :actions [:entry-underline-on]}
-             (create-initial-transition-state state-def))))))
+              :actions [:entry-underline-on :done/.]
+              :done true
+              }
+             (create-initial-transition-state "" state-def))))))
 
 (deftest create-machine-test
   (testing "Create Machine"
@@ -70,9 +73,13 @@
   (testing "minimal machine"
     (let [machine-def {:initial :start
                        :context {:name "Peter"}
-                       :states  {:start {:entry :on-entry-start}
+                       :states  {:start {:entry :on-entry-start
+                                         :type :final}
                                  :stop  {}}}]
-      (is (= {:value :start :actions [:on-entry-start] :context {:name "Peter"}}
+      (is (= {:value :start
+              :actions [:on-entry-start :done/. ]
+              :context {:name "Peter"}
+              :done true}
              (start-machine (machine machine-def)))))))
 
 (deftest find-valid-handler-test
@@ -89,4 +96,3 @@
                 :check-second (fn [context event] (:take-this context))}
                {:take-this true}
                :the-event))))))
-

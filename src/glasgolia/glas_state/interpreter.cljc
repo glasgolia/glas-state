@@ -62,6 +62,7 @@
                             context))))
       :else context)))
 (defn interpreter [the-machine]
+  (assert (sl/machine? the-machine) "Not a statechart machine, please use the glas-state.stateless/machine function")
   (let [result {:storage        (atom {})
                 :machine        the-machine
                 :send-channel   (atom nil)

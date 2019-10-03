@@ -41,13 +41,13 @@
       (is (= @state
              {:value :b :context {:we-where-in-a true :the-a-light-was-off true}}))
 
-      )))
+      (close inst))))
 
-(def delay-test-machine {:initial :red
-                         :states {:red {:on {:timer :green}
-                                        :entry (send :timer {:delay 1000 :id :to-green-timer})}
-                                  :green {:on {:timer :orange}}
-                                  :orange {:on {:timer :red}}}})
+(def delay-test-machine (sl/machine {:initial :red
+                          :states  {:red    {:on    {:timer :green}
+                                             :entry (send :timer {:delay 1000 :id :to-green-timer})}
+                                    :green  {:on {:timer :orange}}
+                                    :orange {:on {:timer :red}}}}))
 
 (deftest delayed-events-test
   (testing interpreter
@@ -56,11 +56,5 @@
                    (add-change-listener interpreter-logger)
                    (start))]
       (send-event inst :dummy)
-      (is inst))))
+      (is inst)))) ; TODO
 
-(comment
-  (let [inst (-> (interpreter delay-test-machine)
-                 (add-change-listener interpreter-logger)
-                 (start))]
-    (println (state-value inst)))
-  )
