@@ -43,14 +43,13 @@
     (let [state-def {:type   :parallel
                      :states {:bold      {:initial :off
                                           :states  {:on  {:entry [:entry-bold-on]}
-                                                    :off {:type :final}}}
+                                                    :off {}}}
                               :underline {:initial :on
                                           :states  {:on  {:entry :entry-underline-on
-                                                          :type :final}
+                                                          }
                                                     :off {:entry :entry-underline-off}}}}}]
       (is (= {:value   {:bold :off :underline :on}
-              :actions [:entry-underline-on :done/.]
-              :done true
+              :actions [:entry-underline-on]
               }
              (create-initial-transition-state "" state-def))))))
 
@@ -62,11 +61,11 @@
                  :states  {:a {}
                            :b {}}}
           options {:guards {:g-a :guard-a-value}}
-          expected {:machine-def m-def
-                    :guards      (:guards options)
-                    :actions     nil
-                    :activities  nil
-                    :context     (:context m-def)
+          expected {:machine-def      m-def
+                    :guards           (:guards options)
+                    :actions          nil
+                    :activities       nil
+                    :context          (:context m-def)
                     :catch-all-action default-catch-all-action}]
       (is (= expected (machine m-def options))))))
 (deftest start-machine-test
@@ -74,13 +73,15 @@
     (let [machine-def {:initial :start
                        :context {:name "Peter"}
                        :states  {:start {:entry :on-entry-start
-                                         :type :final}
+                                         }
                                  :stop  {}}}]
-      (is (= {:value :start
-              :actions [:on-entry-start :done/. ]
+      (is (= {:value   :start
+              :actions [:on-entry-start]
               :context {:name "Peter"}
-              :done true}
+              }
              (start-machine (machine machine-def)))))))
+
+
 
 (deftest find-valid-handler-test
   (testing "event handlers handling"
@@ -96,3 +97,185 @@
                 :check-second (fn [context event] (:take-this context))}
                {:take-this true}
                :the-event))))))
+
+(def test-machine-1
+  (machine
+    {:id      :test-machine-1
+     :initial :a
+     :context {:name  "Peter"
+               :years 47}
+     :states  {:a {:exit  :exit-a
+                   :entry :enter-a
+                   :on    {:switch :b
+                           :to-d   :d}}
+               :b {:entry :enter-b
+                   :exit  :exit-b
+                   :on    {:switch :c}}
+               :c {:entry   :enter-c
+                   :exit    :exit-c
+                   :on      {:switch :a}
+                   :initial :c-1
+                   :states  {:c-1 {:entry :entry-c1
+                                   :exit  :exit-c1
+                                   :on    {:switch :c-2}}
+                             :c-2 {:entry :entry-c2
+                                   :exit  :exit-c2
+                                   }}}
+               :d {:entry  :entry-d
+                   :exit   :exit-d
+                   :type   :parallel
+                   :on     {:to-c :c}
+                   :states {:p1 {:initial :on
+                                 :entry   :entry-p1
+                                 :exit    :exit-p1
+                                 :states  {:on  {:on {:switch :off}}
+                                           :off {:on {:switch :on}}}}
+                            :p2 {:initial :off
+                                 :entry   :entry-p2
+                                 :exit    :exit-p2
+                                 :states  {:on  {:entry :p2-on-entry
+                                                 :exit  :p2-on-exit
+                                                 :on    {:switch :off}}
+                                           :off {:entry :p2-off-entry
+                                                 :exit  :p2-off-exit
+                                                 :on    {:switch :on}}}}}}}}
+    {}))
+
+
+
+
+(defmacro validate [{exp-value   :value
+                       exp-actions :actions
+                       exp-context :context}
+                      state ]
+  `(do
+    (is (= ~exp-value (:value ~state)) "Values are not equal")
+    (is (= (into #{} ~exp-actions) (into #{} (:actions ~state))) "Actions are not equal")
+    (is (= ~exp-context (:context ~state)) "Context are not equal")
+    nil))
+
+
+(comment
+  (macroexpand '(validate {:value   10
+              :actions [:a :b]} {:value 10 :actions [:b :c]}))
+  )
+
+(deftest  transition-machine-test
+  (testing "Transition tests"
+    (let [state (start-machine test-machine-1)
+          state (transition-machine test-machine-1 state :switch)
+          _ (validate {:value :b
+                       :actions [:exit-a :enter-b]}
+                      state)
+          state (transition-machine test-machine-1 state :switch)
+          _ (validate {:value {:c :c-1} :actions [:exit-b :enter-c :entry-c1]} state)
+          state (transition-machine test-machine-1 state :switch)
+          _ (validate {:value {:c :c-2} :actions [:exit-c1 :entry-c2]} state)
+          state (transition-machine test-machine-1 state :switch)
+          _ (validate {:value :a :actions [:exit-c2 :exit-c :enter-a]} state)
+          state (transition-machine test-machine-1 state :to-d)
+          _ (validate{:value   {:d {:p1 :on
+                                  :p2 :off}}
+                    :actions [:exit-a :entry-d :entry-p1 :entry-p2 :p2-off-entry]} state)
+          state (transition-machine test-machine-1 state :switch)
+          _ (validate{:value   {:d {:p1 :off
+                                  :p2 :on}}
+                    :actions [:p2-off-exit :p2-on-entry]} state)
+          state (transition-machine test-machine-1 state :to-c)
+          _ (validate {:value {:c :c-1} :actions [:p2-on-exit :exit-p1 :exit-p2 :exit-d :enter-c :entry-c1]} state)
+          state (transition-machine test-machine-1 state :non-existing-event)
+          _ (validate {:value {:c :c-1} :actions []} state)
+          ])))
+
+
+(deftest on-done-init-test
+  (testing "Testing on-done initial states"
+    (let [state (start-machine
+                  (machine {:initial :a
+                            :states  {:a {:initial :a1
+                                          :states  {:a1 {:initial :a12
+                                                         :states  {:a11 {}
+                                                                   :a12 {:type :final}}}
+                                                    :a2 {}}}
+                                      :b {}
+                                      }}))]
+      (is (= {:value   {:a {:a1 :a12}}
+              :actions [{:type  :glas-state/send
+                         :event :done/..a.a1}]
+              :context {}} state)))
+    (let [state (start-machine
+                  (machine
+                    {:initial :a
+                     :states  {:a {:type :final}
+                               :b {}
+                               }}))]
+      (is (= {:value   :a
+              :actions [(done-event "")]
+              :context {}} state)))
+    (let [state (start-machine
+                  (machine
+                    {:initial :a
+                     :states  {:a {:initial :p
+                                   :states  {:p {:type   :parallel
+                                                 :states {:p1 {}
+                                                          :p2 {:type :final}
+                                                          }}}}}}))]
+      (is (= {:value   {:a {:p {:p1 nil :p2 nil}}}
+              :actions [] :context {}} state))
+      )
+    (let [state (start-machine
+                  (machine
+                    {:initial :a
+                     :states  {:a {:initial :p
+                                   :states  {:p {:type   :parallel
+                                                 :states {:p1 {:type :final}
+                                                          :p2 {:type :final}
+                                                          }}}}}}))]
+      (is (= {:value   {:a {:p {:p1 nil :p2 nil}}}
+              :actions [(done-event ".a.p")] :context {}} state))
+      )
+    )
+  )
+(deftest ^:test-refresh/focus on-done-transition-test
+  (let [the-machine (machine
+                      {:initial :a
+                       :states  {:a {:on {:switch :b}}
+                                 :b {:type :final}}})
+        state (start-machine the-machine)
+        _ (validate {:value :a :actions [] :context {}} state)
+        state (transition-machine the-machine state :switch)
+        _ (validate {:value   :b
+                  :actions [(done-event "")]} state)
+        ]
+
+    )
+
+  )
+(comment
+  (let [the-machine (machine
+                      {:initial :a
+                       :states  {:a {:on {:switch :b}}
+                                 :b {:type :final}}})
+        state (start-machine the-machine)
+        _ (is (= {:value :a :actions [] :context {}} state))
+        state (transition-machine the-machine state :switch)
+        _ (is (= {:value   :b
+                  :done    true
+                  :actions [(done-event "")]} state))]
+
+    )
+  )
+
+#_(deftest init-test
+    (let [machine-def {:initial :start
+                       :context {:name "Peter"}
+                       :states  {:start {:entry :on-entry-start
+                                         }
+                                 :stop  {}}}]
+      (is (= {:value   :start
+              :actions [:on-entry-start]
+              :context {:name "Peter"}
+              }
+             (start-machine (machine machine-def)))))
+    )
+

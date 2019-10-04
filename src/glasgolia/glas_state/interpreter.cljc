@@ -2,21 +2,9 @@
   (:require [glasgolia.glas-state.stateless :as sl]
             [clojure.core.async :as as]))
 
-(defn assign [context-update-fn]
-  {:type     :glas-state/assign-context
-   :assigner context-update-fn})
-
-(defn send
-  ([event delay-context]
-   {:type          :glas-state/send
-    :event         event
-    :delay-context delay-context})
-  ([event]
-   {:type  :glas-state/send
-    :event event}))
 
 (def interpreter-logger
-  (fn [{:keys [prev new prev-context new-context]}]
+  (fn [{:keys [prev new]}]
     (let [prev-value (:value prev)
           new-value (:value new)
           prev-context (:context prev)
@@ -141,7 +129,7 @@
     (init-service service)
     service))
 
-(defn close [{:keys [send-channel delayed-events] :as service}]
+(defn stop [{:keys [send-channel delayed-events]}]
   (swap! delayed-events (fn [events]
                                      (doseq [[_ chan] events]
                                        (as/close! chan))
@@ -154,7 +142,7 @@
   interpreter)
 
 
-(defn send-event
+(defn transition
   ([{:keys [send-channel]} event]
    (if @send-channel
      (as/>!! @send-channel {:event event})
@@ -163,7 +151,7 @@
    (when (not @send-channel) (throw (Exception. "Service is not started")))
    (as/>!! @send-channel {:event event :delay-context delay-context})))
 
-(defn send-event-wait [{:keys [send-channel]} event]
+(defn transition-wait [{:keys [send-channel]} event]
   (if @send-channel
     (let [wait-channel (as/chan 1)]
       (as/>!! @send-channel {:event           event
@@ -195,9 +183,9 @@
                   (add-change-listener (atom-store state))
                   (start))
               ))
-  (send-event inst :timer)
-  (send-event inst :timer {:delay 5000})
-  (close inst)
+  (transition inst :timer)
+  (transition inst :timer {:delay 5000})
+  (stop inst)
   (start inst)
   (prn @(:delayed-events inst))
   (state-value inst)
@@ -208,7 +196,7 @@
                  (add-change-listener (atom-store state))
                  (start))]
     (println "started")
-    (send-event inst :timer)
+    (transition inst :timer)
     (Thread/sleep 2000)
     (println "done"))
 

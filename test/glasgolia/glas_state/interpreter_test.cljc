@@ -7,7 +7,7 @@
                    {:initial :a
                     :context {:first-name "Peter"
                               :last-name  "Muys"}
-                    :entry   [:entry-a (assign (fn [c e m]
+                    :entry   [:entry-a (sl/assign (fn [c e m]
                                                  (-> c
                                                      (assoc :we-where-in-a true)
                                                      (dissoc :first-name)
@@ -18,7 +18,7 @@
                                   :states  {:on  {:entry (fn [c e m]
                                                            (println "Light a is on"))
                                                   :on    {:switch :off}}
-                                            :off {:entry (assign (fn [c _ _]
+                                            :off {:entry (sl/assign (fn [c _ _]
                                                                    (assoc c :the-a-light-was-off true)))}}}
                               :b {:entry :entry-b
                                   :on    {:switch :a}}}}))
@@ -34,27 +34,28 @@
                    (start))]
       (is (= @state
              {:value {:a :on} :context {:we-where-in-a true}}))
-      (send-event-wait inst :switch)
+      (transition-wait inst :switch)
       (is (= @state
              {:value {:a :off} :context {:we-where-in-a true :the-a-light-was-off true}}))
-      (send-event-wait inst :switch)
+      (transition-wait inst :switch)
       (is (= @state
              {:value :b :context {:we-where-in-a true :the-a-light-was-off true}}))
 
-      (close inst))))
+      (stop inst))))
 
-(def delay-test-machine (sl/machine {:initial :red
+
+#_(def delay-test-machine (sl/machine {:initial :red
                           :states  {:red    {:on    {:timer :green}
-                                             :entry (send :timer {:delay 1000 :id :to-green-timer})}
+                                             :entry (sl/send-event :timer {:delay 1000 :id :to-green-timer})}
                                     :green  {:on {:timer :orange}}
                                     :orange {:on {:timer :red}}}}))
 
-(deftest delayed-events-test
+#_(deftest delayed-events-test
   (testing interpreter
     "Testing delay send"
     (let [inst (-> (interpreter delay-test-machine)
                    (add-change-listener interpreter-logger)
                    (start))]
-      (send-event inst :dummy)
+      (transition inst :dummy)
       (is inst)))) ; TODO
 

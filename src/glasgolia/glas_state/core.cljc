@@ -1,7 +1,18 @@
 (ns glasgolia.glas-state.core
-  (:require [glasgolia.glas-state.stateless :as s]))
+  (:require [glasgolia.glas-state.stateless :as sl]
+            [glasgolia.glas-state.interpreter :as i]))
 
 
-(def machine s/machine)
-(def start-machine s/start-machine)
-(def transition-machine s/transition-machine)
+(def machine sl/machine)
+(def assign sl/assign)
+(def send-event sl/send-event)
+(def interpreter-logger i/interpreter-logger)
+(def atom-store i/atom-store)
+(def interpreter i/interpreter)
+(def start i/start)
+(def stop i/stop)
+(def add-change-listener i/add-change-listener)
+(def transition i/transition)
+(def transition-wait i/transition-wait)
+(def state-value i/state-value)
+
