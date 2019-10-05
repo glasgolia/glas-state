@@ -80,11 +80,11 @@
         sub-result (create-initial-transition-state (sub-name parent-name initial) sub-state-def)
         sub-value (:value sub-result)
         sub-final? (leaf-final-state? sub-state-def)
-        done-action (when sub-final? send-event (done-event parent-name))]
+        done-action (when sub-final? (done-event parent-name))]
     (merge {:value          (if sub-value
                               {initial sub-value}
                               initial)
-            :on-done-events (action-array [ done-action])
+            :on-done-events (action-array [done-action])
             :actions        (action-array [entry (:actions sub-result) (:on-done-events sub-result)])}))
   )
 
@@ -97,12 +97,12 @@
         sub-finals (into [] (map (fn [[key value]] (final-state? (get states key) value)) sub-values))
         final? (every? true? sub-finals)
         done-action (when final? (done-event parent-name))
-        sub-actions (action-array (map (fn [v] (:actions v)) (vals sub-results)))
-        sub-done-actions (action-array (map (fn [v] (:on-done-events v)) (vals sub-results)))]
+        sub-actions (action-array (map (fn [[_ v]] (:actions v)) sub-results))
+        sub-done-actions (action-array (map (fn [[_ v]] (:on-done-events v)) sub-results))]
     (merge
-      {:value   sub-values
+      {:value          sub-values
        :on-done-events (action-array [done-action])
-       :actions (action-array [entry sub-actions sub-done-actions])}))
+       :actions        (action-array [entry sub-actions sub-done-actions])}))
   )
 
 (defn create-initial-transition-state
@@ -210,19 +210,21 @@
                                                       current-child-value
                                                       context
                                                       event)]
-    (let [{:keys [handled target actions]} current-child-result]
+    (let [{:keys [handled target actions on-done-events]} current-child-result]
       (if handled
         ; Event is handled by child
         (if target
           ;Child handled the event and we now have a new target child
           (let [new-child-def (get states target)
                 _ (assert new-child-def (str "Can't find child " target " for state-def " state-def))
-                new-child-result (create-initial-transition-state (sub-name parent-name target) new-child-def)]
-            {:actions (action-array [actions (:actions new-child-result)])
-             :value   (create-child-value target (:value new-child-result))
-             :handled true})
+                new-child-result (create-initial-transition-state (sub-name parent-name target) new-child-def)
+                done-action (when (leaf-final-state? new-child-def) (done-event parent-name))]
+            {:actions        (action-array [actions (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
+             :value          (create-child-value target (:value new-child-result))
+             :on-done-events done-action
+             :handled        true})
           ;Child handled the event and we have no new child on this level
-          {:actions actions
+          {:actions (action-array [actions on-done-events])
            :value   (create-child-value current-child-id (:value current-child-result))
            :handled true})
         ; We need to handle the event on this level
@@ -256,28 +258,39 @@
                                     [k (create-transition-state (sub-name parent-name k)
                                                                 (get sub-state-defs k) guards v context event)])
                                   value))
-        sub-actions (action-array (into [] (map (fn [v] (:actions v)) (vals sub-results))))
+
+        sub-values (into {} (map (fn [[k v]]
+                                   [k (:value v)]) sub-results))
+        sub-actions (action-array (mapv (fn [v] (:actions v)) (vals sub-results)))
+        sub-done-actions (action-array (mapv (fn [v] (:on-done-events v)) (vals sub-results)))
+
+        sub-finals (into [] (map (fn [[key value]] (final-state? (get sub-state-defs key) value)) sub-values))
+        final? (every? true? sub-finals)
+        done-action (when final? (done-event parent-name))
         handled? (some true? (map (fn [v] (:handled v)) (vals sub-results)))]
     (if handled?
-      {:value   (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) sub-results))
-       :handled true
-       :actions sub-actions}
+      (let []
+        {:value   (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) sub-results))
+         :handled true
+         :on-done-events done-action
+         :actions (action-array [sub-actions])
+         })
       ;We have to handle the event on this level...
       (let [event-handler (get-event-handler state-def guards context event)
             new-target (:target event-handler)]
         (if event-handler
           (if new-target
             ;Not internal
-            {:actions (action-array [sub-actions (:actions event-handler) (:exit state-def)])
+            {:actions (action-array [sub-actions (:actions event-handler) (:exit state-def) sub-done-actions])
              :target  new-target
-             :value value
+             :value   value
              :handled true}
             ;Internal
-            {:actions (action-array [sub-actions (:actions event-handler)])
+            {:actions (action-array [sub-actions (:actions event-handler) sub-done-actions])
              :value   value
              :handled true})
           ;Not handled...
-          {:actions (action-array [sub-actions (:exit state-def)])
+          {:actions (action-array [sub-actions (:exit state-def) sub-done-actions])
            :value   value
            :handled false})
         ))))
@@ -300,7 +313,10 @@
         context (:context current-state)
         tried-trans (create-transition-state "" machine-def guards value context event)]
     (if (:handled tried-trans)
-      (dissoc tried-trans :handled)
+      (-> tried-trans
+          (dissoc :handled)
+          (update :actions #(action-array [% (:on-done-events tried-trans)]))
+          (dissoc :on-done-events))
       (do
         (println "The event was not handled...")
         (assoc current-state :actions [])))))

@@ -2,6 +2,15 @@
   (:require [clojure.test :refer :all]
             [glasgolia.glas-state.stateless :refer :all]))
 
+(defmacro validate [{exp-value   :value
+                     exp-actions :actions
+                     exp-context :context}
+                    state]
+  `(do
+     (is (= ~exp-value (:value ~state)) "Values are not equal")
+     (is (= (into #{} ~exp-actions) (into #{} (:actions ~state))) "Actions are not equal")
+     (is (= ~exp-context (:context ~state)) "Context are not equal")
+     nil))
 
 (deftest event-type-tests
   (testing "event-type handling"
@@ -26,7 +35,7 @@
                      :states  {:state-1 {}
                                :state-2 {:entry [:a :b [:c]]
                                          :on    [:on-state2]}}}]
-      (is (= {:value :state-2 :actions [:a :b :c]}
+      (is (= {:value :state-2 :actions [:a :b :c] :on-done-events []}
              (create-initial-transition-state "" state-def)))))
   (testing "Initial for hierarchy state"
     (let [state-def {:initial :state-2
@@ -37,7 +46,7 @@
                                          :states  {:state-2-1 {}
                                                    :state-2-2 {:entry :entry-state-2-2}
                                                    }}}}]
-      (is (= {:value {:state-2 :state-2-2} :actions [:entry-state-2 :entry-state-2-2]}
+      (is (= {:value {:state-2 :state-2-2} :actions [:entry-state-2 :entry-state-2-2] :on-done-events []}
              (create-initial-transition-state "" state-def)))))
   (testing "Initial for Parallel state"
     (let [state-def {:type   :parallel
@@ -48,8 +57,9 @@
                                           :states  {:on  {:entry :entry-underline-on
                                                           }
                                                     :off {:entry :entry-underline-off}}}}}]
-      (is (= {:value   {:bold :off :underline :on}
-              :actions [:entry-underline-on]
+      (is (= {:value          {:bold :off :underline :on}
+              :actions        [:entry-underline-on]
+              :on-done-events []
               }
              (create-initial-transition-state "" state-def))))))
 
@@ -141,30 +151,11 @@
                                                  :on    {:switch :on}}}}}}}}
     {}))
 
-
-
-
-(defmacro validate [{exp-value   :value
-                       exp-actions :actions
-                       exp-context :context}
-                      state ]
-  `(do
-    (is (= ~exp-value (:value ~state)) "Values are not equal")
-    (is (= (into #{} ~exp-actions) (into #{} (:actions ~state))) "Actions are not equal")
-    (is (= ~exp-context (:context ~state)) "Context are not equal")
-    nil))
-
-
-(comment
-  (macroexpand '(validate {:value   10
-              :actions [:a :b]} {:value 10 :actions [:b :c]}))
-  )
-
-(deftest  transition-machine-test
+(deftest transition-machine-test
   (testing "Transition tests"
     (let [state (start-machine test-machine-1)
           state (transition-machine test-machine-1 state :switch)
-          _ (validate {:value :b
+          _ (validate {:value   :b
                        :actions [:exit-a :enter-b]}
                       state)
           state (transition-machine test-machine-1 state :switch)
@@ -174,18 +165,33 @@
           state (transition-machine test-machine-1 state :switch)
           _ (validate {:value :a :actions [:exit-c2 :exit-c :enter-a]} state)
           state (transition-machine test-machine-1 state :to-d)
-          _ (validate{:value   {:d {:p1 :on
-                                  :p2 :off}}
-                    :actions [:exit-a :entry-d :entry-p1 :entry-p2 :p2-off-entry]} state)
+          _ (validate {:value   {:d {:p1 :on
+                                     :p2 :off}}
+                       :actions [:exit-a :entry-d :entry-p1 :entry-p2 :p2-off-entry]} state)
           state (transition-machine test-machine-1 state :switch)
-          _ (validate{:value   {:d {:p1 :off
-                                  :p2 :on}}
-                    :actions [:p2-off-exit :p2-on-entry]} state)
+          _ (validate {:value   {:d {:p1 :off
+                                     :p2 :on}}
+                       :actions [:p2-off-exit :p2-on-entry]} state)
           state (transition-machine test-machine-1 state :to-c)
           _ (validate {:value {:c :c-1} :actions [:p2-on-exit :exit-p1 :exit-p2 :exit-d :enter-c :entry-c1]} state)
           state (transition-machine test-machine-1 state :non-existing-event)
           _ (validate {:value {:c :c-1} :actions []} state)
           ])))
+
+
+(defn on-off-switch [initial switch-event]
+  {:initial initial
+   {:states {:off {:on {switch-event :on}}
+             :on  {:on {switch-event :off}}}}})
+(defn bold-on-off-switch (on-off-switch  :off :bold-switch))
+(defn underline-on-off-switch (on-off-switch :off :underline-switch))
+
+(def color-def {:initial :color-black
+                {:states {:color-black {:on {:color-switch :color-red}}
+                          :color-red   {:on {:color-switch :color-green}}
+                          :color-green {:on {:color-switch :color-black}}}}})
+
+
 
 
 (deftest on-done-init-test
@@ -236,7 +242,7 @@
       )
     )
   )
-(deftest ^:test-refresh/focus on-done-transition-test
+(deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine (machine
                       {:initial :a
                        :states  {:a {:on {:switch :b}}
@@ -245,37 +251,54 @@
         _ (validate {:value :a :actions [] :context {}} state)
         state (transition-machine the-machine state :switch)
         _ (validate {:value   :b
-                  :actions [(done-event "")]} state)
+                     :actions [(done-event "")]} state)
         ]
-
     )
-
-  )
-(comment
   (let [the-machine (machine
                       {:initial :a
-                       :states  {:a {:on {:switch :b}}
-                                 :b {:type :final}}})
+                       :states  {:a {:initial :a1
+                                     :states  {:a1 {:on {:switch :a2}}
+                                               :a2 {:type :final}}
+                                     :b       {:type :final}}}
+                       })
         state (start-machine the-machine)
-        _ (is (= {:value :a :actions [] :context {}} state))
+        _ (validate {:value {:a :a1} :actions [] :context {}} state)
         state (transition-machine the-machine state :switch)
-        _ (is (= {:value   :b
-                  :done    true
-                  :actions [(done-event "")]} state))]
+        _ (validate {:value   {:a :a2}
+                     :actions [(done-event ".a")]} state)
+        ]
+    )
+  (let [the-machine
+        (machine
+          {:initial :a
+           :states  {:a
 
+                     {:initial :p
+                      :states  {:p
+                                {
+                                 :type   :parallel
+                                 :states {:bold  {:initial :off
+                                                  :states  {:on        {:on {:switch-bold :off
+                                                                             :bold-finish :bold-done}}
+                                                            :off       {:on {:switch-bold :on
+                                                                             :bold-finish :bold-done}}
+                                                            :bold-done {:type :final}
+                                                            }}
+                                          :color {:initial :black
+                                                  :states  {:black      {:on {:switch-color :red
+                                                                              :color-finish :color-done}}
+                                                            :red        {:on {:switch-color :black
+                                                                              :color-finish :color-done}}
+                                                            :color-done {:type :final}}}}}}}}
+           })
+        state (start-machine the-machine)
+        _ (validate {:value {:a {:p {:bold :off :color :black}}} :actions [] :context {}} state)
+        state (transition-machine the-machine state :bold-finish)
+        _ (validate {:value {:a {:p {:bold :bold-done :color :black}}} :actions []} state)
+        state (transition-machine the-machine state :color-finish)
+        _ (validate {:value {:a {:p {:bold :bold-done :color :color-done}}} :actions [(done-event ".a.p")]} state)
+        ]
     )
   )
 
-#_(deftest init-test
-    (let [machine-def {:initial :start
-                       :context {:name "Peter"}
-                       :states  {:start {:entry :on-entry-start
-                                         }
-                                 :stop  {}}}]
-      (is (= {:value   :start
-              :actions [:on-entry-start]
-              :context {:name "Peter"}
-              }
-             (start-machine (machine machine-def)))))
-    )
 
