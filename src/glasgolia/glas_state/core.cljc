@@ -4,6 +4,7 @@
 
 
 (def machine sl/machine)
+(def state-def-machine sl/state-def-machine)
 (def assign sl/assign)
 (def send-event sl/send-event)
 (def interpreter-logger i/interpreter-logger)
@@ -15,4 +16,6 @@
 (def transition i/transition)
 (def transition-wait i/transition-wait)
 (def state-value i/state-value)
+(def value-to-ids sl/value-to-ids)
+(def leaf-value-to-ids sl/leaf-value-to-ids)
 

@@ -27,7 +27,7 @@
 
 (declare create-initial-transition-state)
 
-(defn- sub-name [parent-name sub-name]
+(defn sub-name [parent-name sub-name]
   (str parent-name "." (name sub-name)))
 
 
@@ -130,6 +130,11 @@
 
 (defn machine? [object]
   (not (nil? (:machine-def object))))
+
+(defn state-def-machine
+  "Get the State-Def for this machine"
+  [machine]
+  (:machine-def machine))
 
 (defn start-machine [{:keys [machine-def context]}]
   (let [state (create-initial-transition-state "" machine-def)
@@ -321,3 +326,42 @@
         (println "The event was not handled...")
         (assoc current-state :actions [])))))
 
+(defn value-to-ids
+  ([parent-id value]
+   (cond
+     (keyword? value) #{(name parent-id) (sub-name parent-id value) (name value)}
+     (map? value) (let [sub-names (into #{} (map (fn [[k v]]
+                                                   (value-to-ids (sub-name parent-id k) v)) value))
+                        all-sub-names (reduce concat #{} sub-names)]
+                    (-> all-sub-names
+                        (conj (name parent-id)))
+                    )
+     :else #{}))
+  ([value]
+   (value-to-ids "" value)))
+
+(defn leaf-value-to-ids
+  ([parent-id value]
+   (cond
+     (keyword? value) #{(sub-name parent-id value)}
+     (map? value) (let [sub-names (into #{} (map (fn [[k v]]
+                                                   (leaf-value-to-ids (sub-name parent-id k) v)) value))
+                        all-sub-names (reduce concat #{} sub-names)]
+                     all-sub-names
+                    )
+     :else #{}))
+  ([value]
+   (leaf-value-to-ids "" value)))
+
+
+(comment
+  (value-to-ids {:trafic-light :done
+                 :style {:bold :off, :underline :off}})
+  (value-to-ids :a)
+  (value-to-ids {:a :b})
+  (value-to-ids :a)
+  (value-to-ids {:a {:b :c
+                     :d :e}})
+  (leaf-value-to-ids {:a {:b :c
+                     :d :e}})
+  )

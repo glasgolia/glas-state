@@ -49,15 +49,19 @@
                             (catch-all-action context event meta)
                             context))))
       :else context)))
-(defn interpreter [the-machine]
-  (assert (sl/machine? the-machine) "Not a statechart machine, please use the glas-state.stateless/machine function")
-  (let [result {:storage        (atom {})
-                :machine        the-machine
-                :send-channel   (atom nil)
-                :listeners      (atom [])
-                :delayed-events (atom {})
-                :action-handler sync-action-handler}]
-    result))
+(defn interpreter
+  ([the-machine state-atom]
+   (assert (sl/machine? the-machine) "Not a statechart machine, please use the glas-state.stateless/machine function")
+   (when (nil? @state-atom) (reset! state-atom {}))
+   (let [result {:storage        state-atom
+                 :machine        the-machine
+                 :send-channel   (atom nil)
+                 :listeners      (atom [])
+                 :delayed-events (atom {})
+                 :action-handler sync-action-handler}]
+     result))
+  ([the-machine]
+   (interpreter the-machine (atom {}))))
 (defn notify-listeners [{:keys [listeners]} prev-state new-state]
   (let [notify-data {:prev prev-state :new new-state}]
     (doseq [l @listeners]
@@ -145,11 +149,11 @@
 (defn transition
   ([{:keys [send-channel]} event]
    (if @send-channel
-     (as/>!! @send-channel {:event event})
+     (as/go (as/>! @send-channel {:event event}))
      (throw (Exception. "Service is not started"))))
   ([{:keys [send-channel]} event delay-context]
    (when (not @send-channel) (throw (Exception. "Service is not started")))
-   (as/>!! @send-channel {:event event :delay-context delay-context})))
+   (as/go (as/>! @send-channel {:event event :delay-context delay-context}))))
 
 (defn transition-wait [{:keys [send-channel]} event]
   (if @send-channel
@@ -168,13 +172,13 @@
                                        :states  {:red    {:on    {:timer [{:target :green
                                                                            :cond   (fn [c e] (< (:count c 0) 2))}
                                                                           :done]}
-                                                          :entry [(assign (fn [c e m]
+                                                          :entry [(sl/assign (fn [c e m]
                                                                             (update c :count inc)))
-                                                                  (send :timer {:delay 1000 :id :the-timer})]}
+                                                                  (sl/send-event :timer {:delay 1000 :id :the-timer})]}
                                                  :green  {:on    {:timer :orange}
-                                                          :entry (send :timer {:delay 1000 :id :the-timer})}
+                                                          :entry (sl/send-event :timer {:delay 1000 :id :the-timer})}
                                                  :orange {:on    {:timer :red}
-                                                          :entry (send :timer {:delay 1000 :id :the-timer})}
+                                                          :entry (sl/send-event :timer {:delay 1000 :id :the-timer})}
                                                  :done   {:type :final}}}))
 
   (def inst (let [state (atom {})]
