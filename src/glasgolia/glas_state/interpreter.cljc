@@ -30,7 +30,7 @@
                           exec (:exec action)]
                       (if exec
                         (exec context event meta)
-                        (if (= (namespace type) "glas-state")
+                        (if (and (or (string? type) (keyword? type))(= (namespace type) "glas-state"))
                           ;We have an internal action
                           (case type
                             :glas-state/assign-context ((:assigner action) context event meta)
@@ -132,7 +132,7 @@
       )
     (init-service service)
     service))
-
+(defn reset [service] (init-service service))
 (defn stop [{:keys [send-channel delayed-events]}]
   (swap! delayed-events (fn [events]
                                      (doseq [[_ chan] events]

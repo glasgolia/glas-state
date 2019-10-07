@@ -12,6 +12,7 @@
 (def interpreter i/interpreter)
 (def start i/start)
 (def stop i/stop)
+(def reset i/reset)
 (def add-change-listener i/add-change-listener)
 (def transition i/transition)
 (def transition-wait i/transition-wait)
