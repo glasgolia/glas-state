@@ -50,16 +50,19 @@
                             context))))
       :else context)))
 (defn interpreter
-  ([the-machine state-atom]
+  ([the-machine state-atom parent-send]
    (assert (sl/machine? the-machine) "Not a statechart machine, please use the glas-state.stateless/machine function")
    (when (nil? @state-atom) (reset! state-atom {}))
    (let [result {:storage        state-atom
                  :machine        the-machine
                  :send-channel   (atom nil)
                  :listeners      (atom [])
+                 :parent-send    (atom parent-send)
                  :delayed-events (atom {})
                  :action-handler sync-action-handler}]
      result))
+  ([the-machine state-atom]
+   (interpreter the-machine state-atom nil))
   ([the-machine]
    (interpreter the-machine (atom {}))))
 (defn notify-listeners [{:keys [listeners]} prev-state new-state]
@@ -144,7 +147,6 @@
 (defn add-change-listener [interpreter fun]
   (swap! (:listeners interpreter) (fn [old] (conj old fun)))
   interpreter)
-
 
 (defn transition
   ([{:keys [send-channel]} event]
