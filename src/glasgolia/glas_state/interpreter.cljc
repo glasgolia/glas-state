@@ -17,38 +17,46 @@
   (fn [{:keys [new]}]
     (reset! store-atom new)))
 
-(defn sync-action-handler [{:keys [machine send-channel] :as inst} context action event meta]
-  (let []
-    (cond
-      (fn? action) (do (action context event meta) context)
-      (keyword? action) (let [external-actions (:actions machine)
-                              resolved-action (or (get external-actions action)
-                                                  (:catch-all-action machine))]
-                          (resolved-action context event meta)
-                          context)
-      (map? action) (let [type (:type action)
-                          exec (:exec action)]
-                      (if exec
-                        (exec context event meta)
-                        (if (and (or (string? type) (keyword? type))(= (namespace type) "glas-state"))
-                          ;We have an internal action
-                          (case type
-                            :glas-state/assign-context ((:assigner action) context event meta)
-                            :glas-state/send (let [event (:event action)
-                                                   delay-context (:delay-context action)]
-                                               (if delay-context
-                                                 (as/go (as/>! @send-channel {:event         event
-                                                                             :delay-context delay-context}))
-                                                 (as/go (as/>! @send-channel {:event event})))
-                                               context)
-                            (do
-                              (println "Unknown internal action: " action)
-                              context))
-                          (let [external-actions (:actions machine)
-                                catch-all-action (:catch-all-action external-actions)]
-                            (catch-all-action context event meta)
-                            context))))
-      :else context)))
+
+(defn sync-action-handler [{:keys [machine send-channel] :as service} context action event meta]
+  (if (keyword? action)
+    (let [from-machine (get (:actions machine) action)
+          resolved (or from-machine (:catch-all-action machine))]
+      (sync-action-handler service context resolved event meta))
+    (do
+      (cond
+        (fn? action) (do (action context event meta) context)
+        #_(keyword? action) #_(let [external-actions (:actions machine)
+                                resolved-action (or (get external-actions action)
+                                                    (:catch-all-action machine))]
+                            (resolved-action context event meta)
+                            context)
+        (map? action) (let [type (:type action)
+                            exec (:exec action)]
+                        (if exec
+                          ;execute the function defined in-line in the machine
+                          (exec context event meta)
+                          (if (and (or (string? type) (keyword? type)) (= (namespace type) "glas-state"))
+                            ;We have an internal action
+                            (case type
+                              :glas-state/assign-context
+                              (let [_ (println "GOT ASSIGN: action=" action " event=" event " meta " meta)]
+                                ((:assigner action) context event meta))
+                              :glas-state/send (let [event (:event action)
+                                                     delay-context (:delay-context action)]
+                                                 (if delay-context
+                                                   (as/go (as/>! @send-channel {:event         event
+                                                                                :delay-context delay-context}))
+                                                   (as/go (as/>! @send-channel {:event event})))
+                                                 context)
+                              (do
+                                (println "Unknown internal action: " action)
+                                context))
+                            (let [external-actions (:actions machine)
+                                  catch-all-action (:catch-all-action external-actions)]
+                              (catch-all-action context event meta)
+                              context))))
+        :else context))))
 (defn interpreter
   ([the-machine state-atom parent-send]
    (assert (sl/machine? the-machine) "Not a statechart machine, please use the glas-state.stateless/machine function")
@@ -109,8 +117,11 @@
       )
     (swap! storage (fn [prev-state]
                      (let [context (:context prev-state)
+                           _ (println "NEW EVENT: " event)
                            new-state (sl/transition-machine machine prev-state event)
+                           _ (println "before actions:" context)
                            new-context (send-actions inst context (:actions new-state) event (:value new-state))
+                           _ (println "after actions:" new-context)
 
                            new-state (-> new-state
                                          (dissoc :actions)
@@ -138,9 +149,9 @@
 (defn reset [service] (init-service service))
 (defn stop [{:keys [send-channel delayed-events]}]
   (swap! delayed-events (fn [events]
-                                     (doseq [[_ chan] events]
-                                       (as/close! chan))
-                                     {}))
+                          (doseq [[_ chan] events]
+                            (as/close! chan))
+                          {}))
   (as/close! @send-channel)
   (reset! send-channel nil))
 
@@ -175,7 +186,7 @@
                                                                            :cond   (fn [c e] (< (:count c 0) 2))}
                                                                           :done]}
                                                           :entry [(sl/assign (fn [c e m]
-                                                                            (update c :count inc)))
+                                                                               (update c :count inc)))
                                                                   (sl/send-event :timer {:delay 1000 :id :the-timer})]}
                                                  :green  {:on    {:timer :orange}
                                                           :entry (sl/send-event :timer {:delay 1000 :id :the-timer})}

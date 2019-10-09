@@ -275,10 +275,10 @@
         handled? (some true? (map (fn [v] (:handled v)) (vals sub-results)))]
     (if handled?
       (let []
-        {:value   (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) sub-results))
-         :handled true
+        {:value          (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) sub-results))
+         :handled        true
          :on-done-events done-action
-         :actions (action-array [sub-actions])
+         :actions        (action-array [sub-actions])
          })
       ;We have to handle the event on this level...
       (let [event-handler (get-event-handler state-def guards context event)
@@ -330,9 +330,10 @@
   ([parent-id value]
    (cond
      (keyword? value) #{(name parent-id) (sub-name parent-id value) (name value)}
+     (string? value) #{parent-id (sub-name parent-id value) (name value)}
      (map? value) (let [sub-names (into #{} (map (fn [[k v]]
                                                    (value-to-ids (sub-name parent-id k) v)) value))
-                        all-sub-names (reduce concat #{} sub-names)]
+                        all-sub-names (into #{} (reduce concat #{} sub-names))]
                     (-> all-sub-names
                         (conj (name parent-id)))
                     )
@@ -344,10 +345,11 @@
   ([parent-id value]
    (cond
      (keyword? value) #{(sub-name parent-id value)}
+     (string? value) #{(sub-name parent-id value)}
      (map? value) (let [sub-names (into #{} (map (fn [[k v]]
                                                    (leaf-value-to-ids (sub-name parent-id k) v)) value))
-                        all-sub-names (reduce concat #{} sub-names)]
-                     all-sub-names
+                        all-sub-names (into #{} (reduce concat #{} sub-names))]
+                    all-sub-names
                     )
      :else #{}))
   ([value]
@@ -356,12 +358,12 @@
 
 (comment
   (value-to-ids {:trafic-light :done
-                 :style {:bold :off, :underline :off}})
+                 :style        {:bold :off, :underline :off}})
   (value-to-ids :a)
   (value-to-ids {:a :b})
   (value-to-ids :a)
   (value-to-ids {:a {:b :c
                      :d :e}})
   (leaf-value-to-ids {:a {:b :c
-                     :d :e}})
+                          :d :e}})
   )
