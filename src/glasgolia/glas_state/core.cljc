@@ -10,7 +10,7 @@
 
 ; from stateless namespace
 (def machine sl/machine)
-(def state-def-machine sl/state-def-machine)
+(def state-def-machine sl/root-node-machine)
 (def assign sl/assign)
 (def send-event sl/send-event)
 (def value-to-ids sl/value-to-ids)

@@ -143,7 +143,7 @@
 (defn machine? [object]
   (not (nil? (:machine-def object))))
 
-(defn state-def-machine
+(defn root-node-machine
   "Get the State-Def for this machine"
   [machine]
   (:machine-def machine))
@@ -270,27 +270,27 @@
 
 
 (defn create-parallel-transition-state [parent-name node guards value context event]
-  (let [sub-node (:states node)
-        sub-results (into {} (map (fn [[k v]]
+  (let [child-node (:states node)
+        child-results (into {} (map (fn [[k v]]
                                     [k (create-transition-state (combine-name parent-name k)
-                                                                (get sub-node k) guards v context event)])
+                                                                (get child-node k) guards v context event)])
                                   value))
 
-        sub-values (into {} (map (fn [[k v]]
-                                   [k (:value v)]) sub-results))
-        sub-actions (action-array (mapv (fn [v] (:actions v)) (vals sub-results)))
-        sub-done-actions (action-array (mapv (fn [v] (:on-done-events v)) (vals sub-results)))
+        child-values (into {} (map (fn [[k v]]
+                                   [k (:value v)]) child-results))
+        child-actions (action-array (mapv (fn [v] (:actions v)) (vals child-results)))
+        child-done-actions (action-array (mapv (fn [v] (:on-done-events v)) (vals child-results)))
 
-        sub-finals (into [] (map (fn [[key value]] (final-node? (get sub-node key) value)) sub-values))
-        final? (every? true? sub-finals)
+        child-finals (into [] (map (fn [[key value]] (final-node? (get child-node key) value)) child-values))
+        final? (every? true? child-finals)
         done-action (when final? (done-event parent-name))
-        handled? (some true? (map (fn [v] (:handled v)) (vals sub-results)))]
+        handled? (some true? (map (fn [v] (:handled v)) (vals child-results)))]
     (if handled?
       (let []
-        {:value          (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) sub-results))
+        {:value          (into {} (map (fn [[k v]] [k (or (:value v) (get value k))]) child-results))
          :handled        true
          :on-done-events done-action
-         :actions        (action-array [sub-actions])
+         :actions        (action-array [child-actions])
          })
       ;We have to handle the event on this level...
       (let [event-handler (get-event-handler node guards context event)
@@ -298,16 +298,16 @@
         (if event-handler
           (if new-target
             ;Not internal
-            {:actions (action-array [sub-actions (:actions event-handler) (:exit node) sub-done-actions])
+            {:actions (action-array [child-actions (:actions event-handler) (:exit node) child-done-actions])
              :target  new-target
              :value   value
              :handled true}
             ;Internal
-            {:actions (action-array [sub-actions (:actions event-handler) sub-done-actions])
+            {:actions (action-array [child-actions (:actions event-handler) child-done-actions])
              :value   value
              :handled true})
           ;Not handled...
-          {:actions (action-array [sub-actions (:exit node) sub-done-actions])
+          {:actions (action-array [child-actions (:exit node) child-done-actions])
            :value   value
            :handled false})
         ))))
@@ -343,10 +343,10 @@
    (cond
      (keyword? value) #{(name parent-id) (combine-name parent-id value) (name value)}
      (string? value) #{parent-id (combine-name parent-id value) (name value)}
-     (map? value) (let [sub-names (into #{} (map (fn [[k v]]
+     (map? value) (let [child-names (into #{} (map (fn [[k v]]
                                                    (value-to-ids (combine-name parent-id k) v)) value))
-                        all-sub-names (into #{} (reduce concat #{} sub-names))]
-                    (-> all-sub-names
+                        all-child-names (into #{} (reduce concat #{} child-names))]
+                    (-> all-child-names
                         (conj (name parent-id)))
                     )
      :else #{}))
