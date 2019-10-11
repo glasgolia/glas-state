@@ -30,7 +30,7 @@
       (is (= {:actions [:lets-enter]}
              (create-initial-transition-state "" state-def)))))
 
-  (testing "Initial for non-leaf state"
+  (testing "Initial for branch state"
     (let [state-def {:initial :state-2
                      :states  {:state-1 {}
                                :state-2 {:entry [:a :b [:c]]
@@ -179,18 +179,18 @@
           ])))
 
 
-(defn on-off-switch [initial switch-event]
-  {:initial initial
-   {:states {:off {:on {switch-event :on}}
-             :on  {:on {switch-event :off}}}}})
-(defn bold-on-off-switch (on-off-switch  :off :bold-switch))
-(defn underline-on-off-switch (on-off-switch :off :underline-switch))
+;(defn on-off-switch [initial switch-event]
+;  {:initial initial
+;   {:states {:off {:on {switch-event :on}}
+;             :on  {:on {switch-event :off}}}}})
+;(defn bold-on-off-switch (on-off-switch  :off :bold-switch))
+;(defn underline-on-off-switch (on-off-switch :off :underline-switch))
 
-(def color-def {:initial :color-black
-                {:states {:color-black {:on {:color-switch :color-red}}
-                          :color-red   {:on {:color-switch :color-green}}
-                          :color-green {:on {:color-switch :color-black}}}}})
-
+;(def color-def {:initial :color-black
+;                {:states {:color-black {:on {:color-switch :color-red}}
+;                          :color-red   {:on {:color-switch :color-green}}
+;                          :color-green {:on {:color-switch :color-black}}}}})
+;
 
 
 

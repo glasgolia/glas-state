@@ -1,5 +1,6 @@
 (ns glasgolia.glas-state.stateless)
 
+; Stateless Statechart implementation
 
 
 (defn event-type [event]
@@ -11,6 +12,7 @@
         :else (str event)))
 
 (defn- action-array [action]
+  "Makes it easy to merge an action list with new actions"
   (if (vector? action)
     (into [] (filter identity (flatten (map action-array action))))
     (if nil
@@ -21,7 +23,7 @@
   (cond
     (nil? (:states state-def)) :leaf
     (= (:type state-def) :parallel) :parallel
-    :else :non-leaf
+    :else :branch
     ))
 
 
@@ -53,7 +55,7 @@
 (defn- leaf-final-state? [state-def]
   (= (:type state-def) :final))
 
-(defn- non-leaf-final-state? [state-def value]
+(defn- branch-final-state? [state-def value]
   (let [sub-states (:states state-def)
         sub-state (get sub-states value)]
     (leaf-final-state? sub-state)))
@@ -67,14 +69,14 @@
   (case (state-def-type state-def)
     :leaf (leaf-final-state? state-def)
     :parallel (parallel-final-state? state-def value)
-    :non-leaf (non-leaf-final-state? state-def value)))
+    :branch (branch-final-state? state-def value)))
 
 (defn- create-initial-leaf-transition-state [parent-name {:keys [entry type]}]
   (merge
     {:actions (action-array [entry])}
     ))
 
-(defn create-initial-non-leaf-transition-state [parent-name {:keys [initial states entry] :as state-def}]
+(defn create-initial-branch-transition-state [parent-name {:keys [initial states entry] :as state-def}]
   (assert initial (str "Need an initial state for " state-def))
   (let [sub-state-def (get states initial)
         sub-result (create-initial-transition-state (sub-name parent-name initial) sub-state-def)
@@ -111,7 +113,7 @@
   (case (state-def-type state-def)
     :leaf (create-initial-leaf-transition-state parent-name state-def)
     :parallel (create-initial-parallel-transition-state parent-name state-def)
-    :non-leaf (create-initial-non-leaf-transition-state parent-name state-def)))
+    :branch (create-initial-branch-transition-state parent-name state-def)))
 
 
 (defn default-catch-all-action [context event meta]
@@ -204,7 +206,7 @@
        :handled false})
     ))
 
-(defn create-non-leaf-transition-state [parent-name state-def guards value context event]
+(defn create-branch-transition-state [parent-name state-def guards value context event]
   (let [current-child-id (child-id value)
         states (:states state-def)
         current-child-def (get states current-child-id)
@@ -305,7 +307,7 @@
   (case (state-def-type state-def)
     :leaf (create-leaf-transition-state state-def guards context event)
     :parallel (create-parallel-transition-state parent-name state-def guards value context event)
-    :non-leaf (create-non-leaf-transition-state parent-name state-def guards value context event)))
+    :branch (create-branch-transition-state parent-name state-def guards value context event)))
 
 
 
@@ -357,13 +359,4 @@
 
 
 (comment
-  (value-to-ids {:trafic-light :done
-                 :style        {:bold :off, :underline :off}})
-  (value-to-ids :a)
-  (value-to-ids {:a :b})
-  (value-to-ids :a)
-  (value-to-ids {:a {:b :c
-                     :d :e}})
-  (leaf-value-to-ids {:a {:b :c
-                          :d :e}})
   )
