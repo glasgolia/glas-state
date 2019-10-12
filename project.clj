@@ -1,4 +1,4 @@
-(defproject glas-state "0 - Alpha"
+(defproject glas-state "0.1.0-alpha"
   :description "Statecharts for clojure and clojurescript, with an xstate-like api."
   :url "https://github.com/glasgolia/glas-state"
   :license {:name "MIT"}
