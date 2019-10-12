@@ -103,9 +103,9 @@
 
 (defn create-initial-parallel-transition-state [parent-name {:keys [states entry]}]
   (let [child-results (map (fn [[key child-node]]
-                           [key (create-initial-transition-state nil child-node)]) states)
+                             [key (create-initial-transition-state nil child-node)]) states)
         child-values (into {} (map (fn [[k v]]
-                                   [k (:value v)]) child-results))
+                                     [k (:value v)]) child-results))
         child-finals (into [] (map (fn [[key value]] (final-node? (get states key) value)) child-values))
         final? (every? true? child-finals)
         done-action (when final? (done-event parent-name))
@@ -129,27 +129,17 @@
 (defn default-catch-all-action [_context _event meta]
   (println "undefined-action called:" (:action meta)))
 
-(defn machine
-  ([machine-def options]
-   {:machine-def      machine-def
-    :guards           (:guards options)
-    :actions          (:actions options)
-    :activities       (:activities options)
-    :context          (or (:context options) (:context machine-def) {})
-    :catch-all-action (or (:catch-all-action options) default-catch-all-action)})
-  ([machine-def]
-   (machine machine-def {})))
+(defn machine-options
+  [machine options]
+  (merge-with into machine {:guards     (:guards options)
+                            :actions    (:actions options)
+                            :activities (:activities options)
+                            :context    (:context options)})
+  )
 
-(defn machine? [object]
-  (not (nil? (:machine-def object))))
 
-(defn root-node-machine
-  "Get the State-Def for this machine"
-  [machine]
-  (:machine-def machine))
-
-(defn start-machine [{:keys [machine-def context]}]
-  (let [state (create-initial-transition-state "" machine-def)
+(defn start-machine [{:keys [context] :as machine}]
+  (let [state (create-initial-transition-state "" machine)
         on-done (:on-done-events state)]
     (-> state
         (assoc :context context)
@@ -272,12 +262,12 @@
 (defn create-parallel-transition-state [parent-name node guards value context event]
   (let [child-node (:states node)
         child-results (into {} (map (fn [[k v]]
-                                    [k (create-transition-state (combine-name parent-name k)
-                                                                (get child-node k) guards v context event)])
-                                  value))
+                                      [k (create-transition-state (combine-name parent-name k)
+                                                                  (get child-node k) guards v context event)])
+                                    value))
 
         child-values (into {} (map (fn [[k v]]
-                                   [k (:value v)]) child-results))
+                                     [k (:value v)]) child-results))
         child-actions (action-array (mapv (fn [v] (:actions v)) (vals child-results)))
         child-done-actions (action-array (mapv (fn [v] (:on-done-events v)) (vals child-results)))
 
@@ -325,17 +315,16 @@
 
 (defn transition-machine [machine current-state event]
   (let [value (:value current-state)
-        machine-def (:machine-def machine)
         guards (:guards machine)
         context (:context current-state)
-        tried-trans (create-transition-state "" machine-def guards value context event)]
+        tried-trans (create-transition-state "" machine guards value context event)]
     (if (:handled tried-trans)
       (-> tried-trans
           (dissoc :handled)
           (update :actions #(action-array [% (:on-done-events tried-trans)]))
           (dissoc :on-done-events))
       (do
-        (println "The event was not handled...")
+        (println "The event was not handled..." event)
         (assoc current-state :actions [])))))
 
 (defn value-to-ids
@@ -344,7 +333,7 @@
      (keyword? value) #{(name parent-id) (combine-name parent-id value) (name value)}
      (string? value) #{parent-id (combine-name parent-id value) (name value)}
      (map? value) (let [child-names (into #{} (map (fn [[k v]]
-                                                   (value-to-ids (combine-name parent-id k) v)) value))
+                                                     (value-to-ids (combine-name parent-id k) v)) value))
                         all-child-names (into #{} (reduce concat #{} child-names))]
                     (-> all-child-names
                         (conj (name parent-id)))
