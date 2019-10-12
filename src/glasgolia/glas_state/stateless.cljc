@@ -203,19 +203,23 @@
 
 (defn create-leaf-transition-state [node guards context event]
   (let [event-handler (get-event-handler node guards context event)
-        new-target (:target event-handler)]
-    (if event-handler
-      (if new-target
-        ;Not internal
-        {:actions (action-array [(:actions event-handler) (:exit node)])
-         :target  new-target
-         :handled true}
-        ;Internal
-        {:actions (action-array (:actions event-handler))
-         :handled true})
-      ;Not handled...
-      {:actions (action-array (:exit node))
-       :handled false})
+        new-target (:target event-handler)
+        final? (= (:type node) :final)]
+    (if final?
+      {:handled true
+       :actions []}
+     (if event-handler
+       (if new-target
+         ;Not internal
+         {:actions (action-array [(:actions event-handler) (:exit node)])
+          :target  new-target
+          :handled true}
+         ;Internal
+         {:actions (action-array (:actions event-handler))
+          :handled true})
+       ;Not handled...
+       {:actions (action-array (:exit node))
+        :handled false}))
     ))
 
 (defn create-branch-transition-state [parent-name node guards value context event]
