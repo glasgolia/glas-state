@@ -71,13 +71,13 @@
                  :states  {:a {}
                            :b {}}}
           options {:guards {:g-a :guard-a-value}}
-          expected {:initial          :a
-                    :context          {:init-context "test"}
-                    :states           {:a {}
-                                       :b {}}
-                    :guards           (:guards options)
-                    :actions          nil
-                    :activities       nil}]
+          expected {:initial    :a
+                    :context    {:init-context "test"}
+                    :states     {:a {}
+                                 :b {}}
+                    :guards     (:guards options)
+                    :actions    nil
+                    :activities nil}]
       (is (= expected (machine-options m-def options))))))
 (deftest start-machine-test
   (testing "minimal machine"
@@ -197,13 +197,13 @@
   (testing "Testing on-done initial states"
     (let [state (start-machine
                   {:initial :a
-                           :states  {:a {:initial :a1
-                                         :states  {:a1 {:initial :a12
-                                                        :states  {:a11 {}
-                                                                  :a12 {:type :final}}}
-                                                   :a2 {}}}
-                                     :b {}
-                                     }})]
+                   :states  {:a {:initial :a1
+                                 :states  {:a1 {:initial :a12
+                                                :states  {:a11 {}
+                                                          :a12 {:type :final}}}
+                                           :a2 {}}}
+                             :b {}
+                             }})]
       (is (= {:value   {:a {:a1 :a12}}
               :actions [{:type  :glas-state/send
                          :event :done/..a.a1}]
@@ -239,6 +239,28 @@
       )
     )
   )
+
+(deftest relative-target-test
+  (let [machine
+        {:initial :c
+         :states {:a {}
+                  :b {}
+                  :c {:initial :c1
+                      :entry :entry-c
+                      :exit :exit-c
+                      :on {:c2 :.c2
+                           :c1 :.c1}
+                      :states {:c1 {:entry :entry-c1
+                                    :exit :exit-c1}
+                               :c2 {}}}
+                  }
+         }
+        state (start-machine machine)
+        _ (validate {:value {:c :c1} :actions [:entry-c1 :entry-c]} state)
+        state (transition-machine machine state :c2)
+        _ (validate {:value {:c :c2} :actions [:exit-c1]} state)
+        ]))
+
 (deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine
         {:initial :a

@@ -30,12 +30,24 @@
 
 (declare create-initial-transition-state)
 
+(defn state-id-to-str [id]
+  (cond
+    (string? id) id
+    (keyword? id) (subs (str id) 1)))
+
+
 (defn combine-name [parent-name child-name]
   "Combines a  parent and child node name.
   ex: (combine-name \"parent\" :child) => \"parent.child\""
-  (str parent-name "." (name child-name)))
+  (str parent-name "." (state-id-to-str child-name)))
 
+(defn- relative-id? [id]
+  (= (first (name id)) \.))
 
+(defn make-id-absolute [id]
+  (cond
+    (string? id) (subs id 1)
+    (keyword? id) (keyword (namespace id)(subs (name id) 1))))
 
 (defn assign [context-update-fn]
   "Creates an event that will assign a new context value using the context-update-fn.
@@ -241,10 +253,19 @@
           (if event-handler
             (if new-target
               ;Not internal
-              {:actions (action-array [(:actions event-handler) child-exit-actions (:exit node)])
-               :target  new-target
-               :value   value
-               :handled true}
+              (if (relative-id? new-target)
+                (let[absolute-target (make-id-absolute new-target)
+                     new-child-node (get states absolute-target)
+                     _ (assert new-child-node (str "Can't find relative child " new-target " for node " node))
+                     new-child-result (create-initial-transition-state (combine-name parent-name absolute-target) new-child-node)
+                     done-action (when (leaf-final-node? new-child-node) (done-event parent-name))]
+                  {:actions (action-array [actions (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
+                   :value (create-child-value absolute-target (:value new-child-result))
+                   :handled true})
+                {:actions (action-array [(:actions event-handler) child-exit-actions (:exit node)])
+                :target  new-target
+                :value   value
+                :handled true})
               ;Internal
               {:actions (action-array [(:actions event-handler) child-exit-actions])
                :value   value
