@@ -1,22 +1,38 @@
 # glas-state
 
-A Clojure library designed to ... well, that part is up to you.
+glas-state is a statechart clojure/clojurescript library.
+The api is based on the api of excellent [x-state.js](https://xstate.js.org/docs/) 
+javavscript library.
+
+## Documentation
+The docs at [x-state.js](https://xstate.js.org/docs/) are good to start
+if you want to see how machines are defined.
+
+I'm busy creating documentation and examples,
+for the moment, just look at the source of the tests.
+The 
+
+## Status
+Glas-state is actively developed and can already be used, 
+but breaking changes to the public api are still possible.
+The definition of a state machine should be stable (it's based on the 
+definition used in x-state).
+
+If you want to be kept informed of changes to glas-state, you can
+always send me an e-mail: peter@glasgolia.com
+
 
 ## Usage
 
-FIXME
+Currently this is alpha code so there is no release yet.
+You can for the moment just clone this repo or use a lein-plugin that
+can pull dependencies from github.
+
 
 ## License
 
-Copyright © 2019 FIXME
+Copyright © 2019 Peter Muys - Glasgolia
 
 This program and the accompanying materials are made available under the
-terms of the Eclipse Public License 2.0 which is available at
-http://www.eclipse.org/legal/epl-2.0.
+terms of the MIT license.
 
-This Source Code may also be made available under the following Secondary
-Licenses when the conditions for such availability set forth in the Eclipse
-Public License, v. 2.0 are satisfied: GNU General Public License as published by
-the Free Software Foundation, either version 2 of the License, or (at your
-option) any later version, with the GNU Classpath Exception which is available
-at https://www.gnu.org/software/classpath/license.html.

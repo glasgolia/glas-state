@@ -1,5 +1,5 @@
 #glas-state development info
-
+## This document is out of date
 ## Terms
 * `Machine-def`
     This is the map structure that defines a statechart.
