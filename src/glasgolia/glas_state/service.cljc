@@ -176,16 +176,19 @@
   ([{:keys [send-channel machine]} event delay-context]
    (when (not @send-channel) (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event :delay delay-context}))
    (as/go (as/>! @send-channel {:event event :delay-context delay-context}))))
+#?(:clj
+         (defn dispatch-and-wait [{:keys [send-channel machine]} event]
+           "Dispatch an event to this service, but block until the event is handled.
+            This function is mainly for testing and should probably not be used in production"
+           (if @send-channel
+             (let [wait-channel (as/chan 1)]
+               (as/>!! @send-channel {:event           event
+                                      :waiting-channel wait-channel})
+               (as/<!! wait-channel))
+             (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event})))
 
-(defn dispatch-and-wait [{:keys [send-channel machine]} event]
-  "Dispatch an event to this service, but block until the event is handled.
-   This function is mainly for testing and should probably not be used in production"
-  (if @send-channel
-    (let [wait-channel (as/chan 1)]
-      (as/>!! @send-channel {:event           event
-                             :waiting-channel wait-channel})
-      (as/<!! wait-channel))
-    (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event})))
+   :cljs ())
+
 
 (defn state-value [{:keys [storage]}]
   "Return the current state of this service"

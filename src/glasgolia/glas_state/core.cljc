@@ -22,7 +22,7 @@
 (def start i/start)
 (def stop i/stop)
 (def reset i/reset)
-(def transition i/dispatch)
-(def transition-wait i/dispatch-and-wait)
+(def dispatch i/dispatch)
+#_(def transition-wait i/dispatch-and-wait)
 (def state-value i/state-value)
 
