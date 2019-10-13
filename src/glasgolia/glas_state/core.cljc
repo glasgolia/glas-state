@@ -17,12 +17,12 @@
 
 
 ; from interpreter namespace
-(def interpreter-logger i/state-logger)
-(def interpreter i/interpreter)
+(def service-logger i/service-logger)
+(def create-service i/create-service)
 (def start i/start)
 (def stop i/stop)
 (def reset i/reset)
-(def transition i/transition)
-(def transition-wait i/transition-wait)
+(def transition i/dispatch)
+(def transition-wait i/dispatch-and-wait)
 (def state-value i/state-value)
 

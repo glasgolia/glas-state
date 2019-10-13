@@ -25,18 +25,18 @@
 
 
 (deftest interpreter-test
-  (testing interpreter
+  (testing create-service
     "Testing transitions"
     (let [state (atom {})
-          inst (-> (interpreter the-machine {:state-atom state
-                                             :change-listener state-logger})
+          inst (-> (create-service the-machine {:state-atom   state
+                                             :change-listener service-logger})
                    (start))]
       (is (= @state
              {:value {:a :on} :context {:we-where-in-a true}}))
-      (transition-wait inst :switch)
+      (dispatch-and-wait inst :switch)
       (is (= @state
              {:value {:a :off} :context {:we-where-in-a true :the-a-light-was-off true}}))
-      (transition-wait inst :switch)
+      (dispatch-and-wait inst :switch)
       (is (= @state
              {:value :b :context {:we-where-in-a true :the-a-light-was-off true}}))
 
@@ -50,10 +50,10 @@
                                     :orange {:on {:timer :red}}}}))
 
 #_(deftest delayed-events-test
-  (testing interpreter
+  (testing create-service
     "Testing delay send"
-    (let [inst (-> (interpreter delay-test-machine {:change-listener state-logger})
+    (let [inst (-> (create-service delay-test-machine {:change-listener service-logger})
                    (start))]
-      (transition inst :dummy)
+      (dispatch inst :dummy)
       (is inst)))) ; TODO
 

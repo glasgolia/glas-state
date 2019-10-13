@@ -3,7 +3,10 @@
             [clojure.core.async :as as]))
 
 
-(def state-logger
+(def service-logger
+  "Simple state logger that you can add as a :change-listener
+   in the config when creating a new service.
+   This just logs state changes using println"
   (fn [{:keys [prev new]}]
     (let [prev-value (:value prev)
           new-value (:value new)
@@ -41,12 +44,20 @@
                                 (ex-info "Unknown internal action" {:action action}))
                               context)))
           :else context)))
-    (catch #?(:clj Exception
+    (catch #?(:clj  Exception
               :cljs :default) e (ex-info "Exception while executing statechart action!" {:machine-id (:id machine)
-                                                                               :action     action
-                                                                               :event      event
-                                                                               :meta       meta} e))))
-(defn interpreter
+                                                                                         :action     action
+                                                                                         :event      event
+                                                                                         :meta       meta} e))))
+(defn create-service
+  "Create a new Statechart service.
+  Needs a machine definition and an optional config map.
+  The config map can contain:
+  - :state-atom  the atom that will be used to store the state
+  - :change-listener  listener that will be called on transitions.
+  This will be called with a map with {:new {<the new state>} :prev {<the previous state>}
+  - :parent-callback  callback function that takes an event.
+  This will be called by the service when we have a send-parent(...)"
   ([the-machine {:keys [state-atom change-listener parent-callback]}]
    (when (nil? @state-atom) (reset! state-atom {}))
    (let [result {:storage         state-atom
@@ -58,14 +69,15 @@
                  :action-handler  sync-action-handler}]
      result))
   ([the-machine]
-   (interpreter the-machine {})))
+   (create-service the-machine {})))
+
 (defn notify-listeners [{:keys [change-listener]} prev-state new-state]
   (when change-listener
     (try
       (change-listener {:prev prev-state :new new-state})
-      (catch #?(:clj Exception
+      (catch #?(:clj  Exception
                 :cljs :default) e (ex-info "Exception while notifying listeners of stateschart service!"
-                                 {:prev-state prev-state :new-state new-state} e)))))
+                                           {:prev-state prev-state :new-state new-state} e)))))
 
 (defn- send-actions [inst context actions event new-state-value]
   (let [action-handler (:action-handler inst)]
@@ -80,7 +92,7 @@
       )
     ))
 
-(defn init-service [{:keys [storage machine] :as inst}]
+(defn- init-service [{:keys [storage machine] :as inst}]
   (swap! storage (fn [prev-state]
                    (let [{:keys [actions context value] :as state} (sl/start-machine machine)
                          new-context (send-actions inst context actions :glas-state/start-machine value)
@@ -91,7 +103,7 @@
                      new-state)))
   (:value @storage))
 
-(defn handle-event [{:keys [storage machine send-channel] :as inst} {:keys [event waiting-channel delay-context]}]
+(defn- handle-event [{:keys [storage machine send-channel] :as inst} {:keys [event waiting-channel delay-context]}]
   (if delay-context
     (let [id (or (:id delay-context) event)
           delay (:delay delay-context)
@@ -119,6 +131,9 @@
 
 
 (defn start [{:keys [send-channel] :as service}]
+  "Starts a given service.
+  This creates the initial state and possible execute
+  the entry actions for this initial state."
   (let [sc (as/chan 20)]
     (reset! send-channel sc)
     (as/go-loop [event (as/<! sc)]
@@ -132,8 +147,16 @@
       )
     (init-service service)
     service))
-(defn reset [service] (init-service service))
+(defn reset
+  "reset the state to the initial state of the machine.
+  Warning, exit actions are not called, only entry actions
+  of the initial state."
+  [service] (init-service service))
+
+
 (defn stop [{:keys [send-channel delayed-events]}]
+  "stop a running service, needed to cleanup
+  internal structures."
   (swap! delayed-events (fn [events]
                           (doseq [[_ chan] events]
                             (as/close! chan))
@@ -142,24 +165,30 @@
   (reset! send-channel nil))
 
 
-(defn transition
-  ([{:keys [send-channel]} event]
+(defn dispatch
+  "Dispatch an event to this service.
+  If you want to delay the handling of the event an amount of time,
+  you can add a delay context map containing {:delay <delay in ms> :id <delay-id, used to cancel if needed>}"
+  ([{:keys [send-channel machine]:as _service} event]
    (if @send-channel
      (as/go (as/>! @send-channel {:event event}))
-     (throw (Exception. "Service is not started"))))
-  ([{:keys [send-channel]} event delay-context]
-   (when (not @send-channel) (throw (Exception. "Service is not started")))
+     (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event}) ))
+  ([{:keys [send-channel machine]} event delay-context]
+   (when (not @send-channel) (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event :delay delay-context}))
    (as/go (as/>! @send-channel {:event event :delay-context delay-context}))))
 
-(defn transition-wait [{:keys [send-channel]} event]
+(defn dispatch-and-wait [{:keys [send-channel machine]} event]
+  "Dispatch an event to this service, but block until the event is handled.
+   This function is mainly for testing and should probably not be used in production"
   (if @send-channel
     (let [wait-channel (as/chan 1)]
       (as/>!! @send-channel {:event           event
                              :waiting-channel wait-channel})
       (as/<!! wait-channel))
-    (throw (Exception. "Service is not started"))))
+    (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event})))
 
 (defn state-value [{:keys [storage]}]
+  "Return the current state of this service"
   (:value @storage))
 
 (comment
@@ -178,22 +207,22 @@
                                      :done   {:type :final}}})
 
   (def inst (let [state (atom {})]
-              (-> (interpreter delay-test-machine {:change-listener state-logger})
+              (-> (create-service delay-test-machine {:change-listener service-logger})
                   (start))
               ))
-  (transition inst :timer)
-  (transition inst :timer {:delay 5000})
+  (dispatch inst :timer)
+  (dispatch inst :timer {:delay 5000})
   (stop inst)
   (start inst)
   (prn @(:delayed-events inst))
   (state-value inst)
   (prn inst)
   (let [state (atom {})
-        inst (-> (interpreter delay-test-machine {:state-atom      state
-                                                  :change-listener state-logger})
+        inst (-> (create-service delay-test-machine {:state-atom      state
+                                                     :change-listener service-logger})
                  (start))]
     (println "started")
-    (transition inst :timer)
+    (dispatch inst :timer)
     (Thread/sleep 2000)
     (println "done"))
 
