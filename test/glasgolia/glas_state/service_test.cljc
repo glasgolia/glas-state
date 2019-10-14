@@ -42,6 +42,27 @@
 
       (stop inst))))
 
+(def example-cmp-machine
+  {:id      :examples-component
+   :initial :please-select-example
+   :states
+            {:please-select-example {:on
+                                     {:select-example
+                                      {:target  :show-example
+                                       :actions (sl/assign (fn [c e m]
+                                                         (assoc c :selected (:example-id e))))}}}
+             :show-example {}}
+   :context {:list  []
+             :selected nil}})
+
+(deftest ^:test-refresh/focus-not on-with-actions-test
+
+  (let[state (atom {})
+       inst (-> (create-service example-cmp-machine {:state-atom   state
+                                             :change-listener service-logger})
+                (start))]
+    (dispatch-and-wait inst {:type :select-example :example-id "blabla"})
+    (is (= @state  {:value :show-example :context {:list [] :selected "blabla"}}))))
 
 #_(def delay-test-machine (sl/machine {:initial :red
                           :states  {:red    {:on    {:timer :green}

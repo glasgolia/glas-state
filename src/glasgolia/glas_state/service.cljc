@@ -59,8 +59,8 @@
   - :parent-callback  callback function that takes an event.
   This will be called by the service when we have a send-parent(...)"
   ([the-machine {:keys [state-atom change-listener parent-callback]}]
-   (when (nil? @state-atom) (reset! state-atom {}))
-   (let [result {:storage         state-atom
+   (when (and state-atom (nil? @state-atom)) (reset! state-atom {}))
+   (let [result {:storage         (or state-atom (atom {}))
                  :machine         the-machine
                  :send-channel    (atom nil)
                  :change-listener change-listener

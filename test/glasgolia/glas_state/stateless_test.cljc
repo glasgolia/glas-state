@@ -260,6 +260,27 @@
         state (transition-machine machine state :c2)
         _ (validate {:value {:c :c2} :actions [:exit-c1]} state)
         ]))
+;(def example-cmp-machine
+;  {:id      :examples-component
+;   :initial :please-select-example
+;   :states
+;            {:please-select-example {:on
+;                                     {:select-example
+;                                      {:target  :show-example
+;                                       :actions (assign (fn [c e m]
+;                                                         (println "......." e)
+;                                                         (assoc c :selected (:example-id e))))}}}
+;             :show-example {}}
+;   :context {:list  []
+;             :selected nil}})
+;
+;(deftest ^:test-refresh/focus on-with-actions-test
+;  (let[state (start-machine example-cmp-machine)
+;       _  (validate {:value :please-select-example :context {:list[] :selected nil}} state)
+;       state (transition-machine example-cmp-machine state {:type :select-example :example-id :the-selected-id})
+;       _  (validate {:value :show-example :context {:list[] :selected :the-selected-id}} state)
+;
+;       ]))
 
 (deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine
