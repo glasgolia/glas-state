@@ -30,7 +30,7 @@
     (let [state (atom {})
           inst (-> (create-service the-machine {:state-atom   state
                                              :change-listener service-logger})
-                   (start))]
+                   #_(start))]
       (is (= @state
              {:value {:a :on} :context {:we-where-in-a true}}))
       (dispatch-and-wait inst :switch)
@@ -60,7 +60,7 @@
   (let[state (atom {})
        inst (-> (create-service example-cmp-machine {:state-atom   state
                                              :change-listener service-logger})
-                (start))]
+                #_(start))]
     (dispatch-and-wait inst {:type :select-example :example-id "blabla"})
     (is (= @state  {:value :show-example :context {:list [] :selected "blabla"}}))))
 

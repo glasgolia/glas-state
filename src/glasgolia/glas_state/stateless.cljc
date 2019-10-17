@@ -263,7 +263,7 @@
                      _ (assert new-child-node (str "Can't find relative child " new-target " for node " node))
                      new-child-result (create-initial-transition-state (combine-name parent-name absolute-target) new-child-node)
                      done-action (when (leaf-final-node? new-child-node) (done-event parent-name))]
-                  {:actions (action-array [actions (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
+                  {:actions (action-array [actions (:actions event-handler) (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
                    :value (create-child-value absolute-target (:value new-child-result))
                    :handled true})
                 {:actions (action-array [(:actions event-handler) child-exit-actions (:exit node)])
@@ -329,6 +329,8 @@
 
 
 (defn create-transition-state [parent-name node guards value context event]
+  (let []
+    (if ))
   (case (node-type node)
     :leaf (create-leaf-transition-state node guards context event)
     :parallel (create-parallel-transition-state parent-name node guards value context event)

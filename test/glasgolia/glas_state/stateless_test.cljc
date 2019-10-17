@@ -240,25 +240,29 @@
     )
   )
 
-(deftest relative-target-test
+(deftest ^:test-refresh/focus-not relative-target-test
   (let [machine
         {:initial :c
-         :states {:a {}
-                  :b {}
-                  :c {:initial :c1
-                      :entry :entry-c
-                      :exit :exit-c
-                      :on {:c2 :.c2
-                           :c1 :.c1}
-                      :states {:c1 {:entry :entry-c1
-                                    :exit :exit-c1}
-                               :c2 {}}}
-                  }
+         :on      {:go-to-b {:target :.b
+                             :actions [:test]}}
+         :states  {:a {}
+                   :b {}
+                   :c {:initial :c1
+                       :entry   :entry-c
+                       :exit    :exit-c
+                       :on      {:c2 {:target :.c2 :actions :goto-c2-action}
+                                 :c1 :.c1}
+                       :states  {:c1 {:entry :entry-c1
+                                      :exit  :exit-c1}
+                                 :c2 {}}}
+                   }
          }
         state (start-machine machine)
         _ (validate {:value {:c :c1} :actions [:entry-c1 :entry-c]} state)
         state (transition-machine machine state :c2)
-        _ (validate {:value {:c :c2} :actions [:exit-c1]} state)
+        _ (validate {:value {:c :c2} :actions [:exit-c1 :goto-c2-action]} state)
+        state (transition-machine machine state :go-to-b)
+        _ (validate {:value :b :actions [:exit-c :test]} state)
         ]))
 ;(def example-cmp-machine
 ;  {:id      :examples-component
@@ -282,7 +286,7 @@
 ;
 ;       ]))
 
-(deftest ^:test-refresh/focus_not on-done-transition-test
+(deftest ^:test-refresh/focus on-done-transition-test
   (let [the-machine
         {:initial :a
          :states  {:a {:on {:switch :b}}
