@@ -329,8 +329,7 @@
 
 
 (defn create-transition-state [parent-name node guards value context event]
-  (let []
-    (if ))
+
   (case (node-type node)
     :leaf (create-leaf-transition-state node guards context event)
     :parallel (create-parallel-transition-state parent-name node guards value context event)
