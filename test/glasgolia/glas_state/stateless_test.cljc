@@ -77,14 +77,14 @@
                                  :b {}}
                     :guards     (:guards options)
                     :actions    nil
-                    :activities nil}]
+                    :activities nil
+                    :services   nil}]
       (is (= expected (machine-options m-def options))))))
 (deftest start-machine-test
   (testing "minimal machine"
     (let [machine-def {:initial :start
                        :context {:name "Peter"}
-                       :states  {:start {:entry :on-entry-start
-                                         }
+                       :states  {:start {:entry :on-entry-start}
                                  :stop  {}}}]
       (is (= {:value   :start
               :actions [:on-entry-start]
@@ -193,7 +193,7 @@
 
 
 
-(deftest on-done-init-test
+(deftest ^:test-refresh/focus  on-done-init-test
   (testing "Testing on-done initial states"
     (let [state (start-machine
                   {:initial :a
@@ -243,7 +243,7 @@
 (deftest ^:test-refresh/focus-not relative-target-test
   (let [machine
         {:initial :c
-         :on      {:go-to-b {:target :.b
+         :on      {:go-to-b {:target  :.b
                              :actions [:test]}}
          :states  {:a {}
                    :b {}
@@ -285,6 +285,8 @@
 ;       _  (validate {:value :show-example :context {:list[] :selected :the-selected-id}} state)
 ;
 ;       ]))
+
+(deftest ^:test-refresh/focus invoke-test)
 
 (deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine
@@ -344,4 +346,32 @@
     )
   )
 
-
+(deftest ^:test-refresh/focus-not invoke-test
+  (let [the-machine
+        {:initial :a
+         :states  {:a    {:invoke {:id :invoke-in-a}
+                          :on     {:next :b}}
+                   :b    {:initial :b1
+                          :on      {:next :c}
+                          :invoke  {:id :invoke-in-b}
+                          :states  {:b1 {:invoke {:id :invoke-in-b1}
+                                         }}}
+                   :c    {:type   :parallel
+                          :states {:c1 {:invoke {:id :invoke-in-c1}}
+                                   :c2 {:invoke {:id :invoke-in-c2}}}}
+                   :done {:type :final}}}
+        state (start-machine the-machine)
+        _ (validate {:value :a :actions [{:type :glas-state/invoke :config {:id :invoke-in-a}}] :context nil} state)
+        state (transition-machine the-machine state :next)
+        _ (validate {:value {:b :b1} :actions [{:type :glas-state/invoke-cleanup :id :invoke-in-a}
+                                               {:type :glas-state/invoke :config {:id :invoke-in-b1}}
+                                               {:type :glas-state/invoke :config {:id :invoke-in-b}}] :context nil} state)
+        state (transition-machine the-machine state :next)
+        _ (validate {:value {:c {:c1 nil
+                                 :c2 nil}} :actions [{:type :glas-state/invoke-cleanup :id :invoke-in-b1}
+                                                     {:type :glas-state/invoke-cleanup :id :invoke-in-b}
+                                                     {:type :glas-state/invoke :config {:id :invoke-in-c1}}
+                                                     {:type :glas-state/invoke :config {:id :invoke-in-c2}}] :context nil} state)
+        ]
+    )
+  )

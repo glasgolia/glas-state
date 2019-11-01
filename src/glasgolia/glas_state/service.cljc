@@ -17,6 +17,40 @@
       (when (not= prev-context new-context)
         (println "CONTEXT: " new-context " <-- " prev-context)))))
 
+(declare dispatch)
+
+(defn- invoke-child [service context event meta]
+  (let [invoke (:config event)
+        id (:id invoke)
+        src  (:src invoke)
+        src (if (keyword? src)
+              (get-in service [:machine :services src])
+              src)
+        _ (assert (fn? src) "Invoke src must be a function")
+        data (:data invoke)
+        data (if (fn? data)
+               (data context event meta)
+               nil)
+        invoke-fn (src data event meta)
+        callback (fn [event] (dispatch service event))
+        listener-atom (atom (fn[e] nil))
+        on-event (fn[listener] (reset! listener-atom listener))
+        cleanup-fn (invoke-fn callback on-event)
+        child-service-def {:id id
+                           :listener listener-atom
+                           :cleanup-fn cleanup-fn}
+        ]
+    (swap! (:child-services service) assoc id child-service-def)
+    context
+    ))
+
+(defn- invoke-child-cleanup [service context event meta]
+  (let [child-services @(:child-services service)
+        child-service (get child-services (:id event))
+        cleanup-fn (:cleanup-fn child-service)]
+    (when cleanup-fn (cleanup-fn))
+    (swap! (:child-services service) dissoc (:id event))))
+
 (defn- sync-action-handler [{:keys [machine send-channel] :as service} context action event meta]
   (try
     (if (keyword? action)
@@ -47,6 +81,10 @@
                                                                                   :delay-context delay-context}))
                                                      (as/go (as/>! @send-channel {:event event})))
                                                    context)
+                                :glas-state/invoke (do (invoke-child service context action  meta)
+                                                       context)
+                                :glas-state/invoke-cleanup (do (invoke-child-cleanup service context action meta)
+                                                       context)
                                 (ex-info "Unknown internal action" {:action action}))
                               context)))
           :else context)))
@@ -176,6 +214,7 @@
                  :parent-send     parent-callback
                  :delayed-events  (atom {})
                  :action-handler  sync-action-handler
+                 :child-services (atom {})
                  :service-data    service-data}]
      (if (or (nil? auto-start) auto-start)
        (start result)

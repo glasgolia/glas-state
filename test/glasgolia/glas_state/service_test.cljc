@@ -14,6 +14,18 @@
                                        (dissoc :last-name))))]
    :states  {:a {:entry   :entry-a
                  :on      {:switch :b}
+                 :invoke  {:id  :child-service-start
+                           :src (fn [context event meta]
+                                  (let []
+                                    (fn [callback on-event]
+                                      (println "Child Service Invoked")
+                                      (println "Context=" context)
+                                      (println "event=" event)
+                                      (println "meta=" meta)
+                                      (fn [] (println "Child Service Cleanup Invoked")))
+                                    ))
+                           }
+
                  :initial :on
                  :states  {:on  {:entry (fn [c e m]
                                           (println "Light a is on"))
@@ -29,8 +41,8 @@
     (let [state (atom {})
           inst (-> (create-service the-machine {:state-atom      state
                                                 :change-listener service-logger
-                                                :actions {:turn-light-off (fn [c _ _]
-                                                                            (assoc c :the-a-light-was-off true))}})
+                                                :actions         {:turn-light-off (fn [c _ _]
+                                                                                    (assoc c :the-a-light-was-off true))}})
                    #_(start))
           ]
       (is (= @state
