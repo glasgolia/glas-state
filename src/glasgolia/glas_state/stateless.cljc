@@ -52,7 +52,9 @@
 (defn assign [context-update-fn]
   "Creates an event that will assign a new context value using the context-update-fn.
    You should only use this in the machine definition.
-   The context function will be passed: the current context, the event, meta-data"
+   The context function will be passed: the current context, the event, meta-data.
+   If the argument is not a function, than the function will be looked up in the
+   machine config actions"
   {:type     :glas-state/assign-context
    :assigner context-update-fn})
 

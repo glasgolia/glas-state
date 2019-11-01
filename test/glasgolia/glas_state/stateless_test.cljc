@@ -286,7 +286,7 @@
 ;
 ;       ]))
 
-(deftest ^:test-refresh/focus on-done-transition-test
+(deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine
         {:initial :a
          :states  {:a {:on {:switch :b}}

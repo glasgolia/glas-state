@@ -33,7 +33,13 @@
                               ;We have an internal action
                               (case type
                                 :glas-state/assign-context
-                                ((:assigner action) context event meta)
+                                (let [fun (:assigner action)
+                                      fun (if (fn? fun)
+                                           fun
+                                           (get (:actions machine) fun))]
+                                  (if (nil? fun)
+                                    (ex-info "Unknown assigner in : " action)
+                                    (fun context event meta)))
                                 :glas-state/send (let [event (:event action)
                                                        delay-context (:delay-context action)]
                                                    (if delay-context
@@ -158,11 +164,11 @@
   - :service-id  id of this service, default is the machine-id
   - :auto-start automatically start the machine on the first event, default true
   - :service-data user-data that needs to be linked to this service"
-  ([the-machine {:keys [state-atom change-listener parent-callback service-id auto-start service-data] :as _config}]
+  ([the-machine {:keys [state-atom change-listener parent-callback service-id auto-start service-data] :as config}]
    (when (and state-atom (nil? @state-atom)) (reset! state-atom {}))
    (let [
          result {:storage         (or state-atom (atom {}))
-                 :machine         the-machine
+                 :machine         (sl/machine-options the-machine config)
                  :service-id      (or service-id (:id the-machine))
                  :service-state   (atom :idle)
                  :send-channel    (atom nil)
