@@ -19,61 +19,62 @@
 
 (declare dispatch)
 
-(defn- invoke-child [service context event meta]
-  (let [invoke (:config event)
+
+(defn- invoke-child [service context action]
+  (let [invoke (:config action)
         id (:id invoke)
-        src  (:src invoke)
+        src (:src invoke)
         src (if (keyword? src)
               (get-in service [:machine :services src])
               src)
         _ (assert (fn? src) "Invoke src must be a function")
         data (:data invoke)
         data (if (fn? data)
-               (data context event meta)
+               (data context action)
                nil)
-        invoke-fn (src data event meta)
+        invoke-fn (src data action)
         callback (fn [event] (dispatch service event))
-        listener-atom (atom (fn[e] nil))
-        on-event (fn[listener] (reset! listener-atom listener))
+        listener-atom (atom (fn [e] nil))
+        on-event (fn [listener] (reset! listener-atom listener))
         cleanup-fn (invoke-fn callback on-event)
-        child-service-def {:id id
-                           :listener listener-atom
+        child-service-def {:id         id
+                           :listener   listener-atom
                            :cleanup-fn cleanup-fn}
         ]
     (swap! (:child-services service) assoc id child-service-def)
     context
     ))
 
-(defn- invoke-child-cleanup [service context event meta]
+(defn- invoke-child-cleanup [service context event]
   (let [child-services @(:child-services service)
         child-service (get child-services (:id event))
         cleanup-fn (:cleanup-fn child-service)]
     (when cleanup-fn (cleanup-fn))
     (swap! (:child-services service) dissoc (:id event))))
 
-(defn- sync-action-handler [{:keys [machine send-channel] :as service} context action event meta]
+(defn- sync-action-handler [{:keys [machine send-channel] :as service} context action event]
   (try
     (if (keyword? action)
-      (sync-action-handler service context (get (:actions machine) action) event meta)
+      (sync-action-handler service context (get (:actions machine) action) event)
       (do
         (cond
-          (fn? action) (do (action context event meta) context)
+          (fn? action) (do (action context event) context)
           (map? action) (let [type (:type action)
                               exec (:exec action)]
                           (if exec
                             ;execute the function defined in-line in the machine
-                            (exec context event meta)
+                            (exec context event)
                             (if (and (or (string? type) (keyword? type)) (= (namespace type) "glas-state"))
                               ;We have an internal action
                               (case type
                                 :glas-state/assign-context
                                 (let [fun (:assigner action)
                                       fun (if (fn? fun)
-                                           fun
-                                           (get (:actions machine) fun))]
+                                            fun
+                                            (get (:actions machine) fun))]
                                   (if (nil? fun)
                                     (ex-info "Unknown assigner in : " action)
-                                    (fun context event meta)))
+                                    (fun context event)))
                                 :glas-state/send (let [event (:event action)
                                                        delay-context (:delay-context action)]
                                                    (if delay-context
@@ -81,18 +82,17 @@
                                                                                   :delay-context delay-context}))
                                                      (as/go (as/>! @send-channel {:event event})))
                                                    context)
-                                :glas-state/invoke (do (invoke-child service context action  meta)
+                                :glas-state/invoke (do (invoke-child service context action)
                                                        context)
-                                :glas-state/invoke-cleanup (do (invoke-child-cleanup service context action meta)
-                                                       context)
+                                :glas-state/invoke-cleanup (do (invoke-child-cleanup service context action)
+                                                               context)
                                 (ex-info "Unknown internal action" {:action action}))
                               context)))
           :else context)))
     (catch #?(:clj  Exception
               :cljs :default) e (ex-info "Exception while executing statechart action!" {:machine-id (:id machine)
                                                                                          :action     action
-                                                                                         :event      event
-                                                                                         :meta       meta} e))))
+                                                                                         :event      event} e))))
 
 (defn notify-listeners [{:keys [change-listener]} prev-state new-state]
   (when change-listener
@@ -108,7 +108,7 @@
            a actions]
       (let [next-action (first a)]
         (if next-action
-          (let [new-context (action-handler inst c next-action event {:action next-action
+          (let [new-context (action-handler inst c next-action event #_{:action next-action
                                                                       :state  new-state-value})]
             (recur new-context (rest a)))
           c))
@@ -201,21 +201,29 @@
   This will be called by the service when we have a send-parent(...)
   - :service-id  id of this service, default is the machine-id
   - :auto-start automatically start the machine on the first event, default true
-  - :service-data user-data that needs to be linked to this service"
-  ([the-machine {:keys [state-atom change-listener parent-callback service-id auto-start service-data] :as config}]
+  - :service-data user-data that needs to be linked to this service
+  - :child-service-creator function used to create child machine services
+  The config map is also passed to the machine using the machine-options function"
+  ([the-machine {:keys [state-atom
+                        change-listener
+                        parent-callback
+                        service-id
+                        auto-start service-data
+                        child-service-creator] :as config}]
    (when (and state-atom (nil? @state-atom)) (reset! state-atom {}))
    (let [
-         result {:storage         (or state-atom (atom {}))
-                 :machine         (sl/machine-options the-machine config)
-                 :service-id      (or service-id (:id the-machine))
-                 :service-state   (atom :idle)
-                 :send-channel    (atom nil)
-                 :change-listener change-listener
-                 :parent-send     parent-callback
-                 :delayed-events  (atom {})
-                 :action-handler  sync-action-handler
-                 :child-services (atom {})
-                 :service-data    service-data}]
+         result {:storage               (or state-atom (atom {}))
+                 :machine               (sl/machine-options the-machine config)
+                 :service-id            (or service-id (:id the-machine))
+                 :service-state         (atom :idle)
+                 :send-channel          (atom nil)
+                 :change-listener       change-listener
+                 :parent-send           parent-callback
+                 :delayed-events        (atom {})
+                 :action-handler        sync-action-handler
+                 :child-services        (atom {})
+                 :service-data          service-data
+                 :child-service-creator (or child-service-creator create-service)}]
      (if (or (nil? auto-start) auto-start)
        (start result)
        result)
@@ -265,7 +273,7 @@
                            :states  {:red    {:on    {:timer [{:target :green
                                                                :cond   (fn [c e] (< (:count c 0) 2))}
                                                               :done]}
-                                              :entry [(sl/assign (fn [c e m]
+                                              :entry [(sl/assign (fn [c e]
                                                                    (update c :count inc)))
                                                       (sl/send-event :timer {:delay 1000 :id :the-timer})]}
                                      :green  {:on    {:timer :orange}

@@ -193,7 +193,7 @@
 
 
 
-(deftest ^:test-refresh/focus  on-done-init-test
+(deftest ^:test-refresh/focus_not  on-done-init-test
   (testing "Testing on-done initial states"
     (let [state (start-machine
                   {:initial :a
@@ -286,7 +286,7 @@
 ;
 ;       ]))
 
-(deftest ^:test-refresh/focus invoke-test)
+(deftest ^:test-refresh/focus_not invoke-test)
 
 (deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine

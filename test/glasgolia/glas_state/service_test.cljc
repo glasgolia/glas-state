@@ -7,7 +7,7 @@
   {:initial :a
    :context {:first-name "Peter"
              :last-name  "Muys"}
-   :entry   [:entry-a (sl/assign (fn [c e m]
+   :entry   [:entry-a (sl/assign (fn [c e]
                                    (-> c
                                        (assoc :we-where-in-a true)
                                        (dissoc :first-name)
@@ -15,19 +15,19 @@
    :states  {:a {:entry   :entry-a
                  :on      {:switch :b}
                  :invoke  {:id  :child-service-start
-                           :src (fn [context event meta]
+                           :src (fn [context event]
                                   (let []
                                     (fn [callback on-event]
                                       (println "Child Service Invoked")
                                       (println "Context=" context)
                                       (println "event=" event)
-                                      (println "meta=" meta)
+
                                       (fn [] (println "Child Service Cleanup Invoked")))
                                     ))
                            }
 
                  :initial :on
-                 :states  {:on  {:entry (fn [c e m]
+                 :states  {:on  {:entry (fn [c e]
                                           (println "Light a is on"))
                                  :on    {:switch :off}}
                            :off {:entry (sl/assign :turn-light-off)}}}
@@ -41,7 +41,7 @@
     (let [state (atom {})
           inst (-> (create-service the-machine {:state-atom      state
                                                 :change-listener service-logger
-                                                :actions         {:turn-light-off (fn [c _ _]
+                                                :actions         {:turn-light-off (fn [c _]
                                                                                     (assoc c :the-a-light-was-off true))}})
                    #_(start))
           ]
@@ -63,7 +63,7 @@
             {:please-select-example {:on
                                      {:select-example
                                       {:target  :show-example
-                                       :actions (sl/assign (fn [c e m]
+                                       :actions (sl/assign (fn [c e]
                                                              (assoc c :selected (:example-id e))))}}}
              :show-example          {}}
    :context {:list     []
