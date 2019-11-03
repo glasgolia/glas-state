@@ -206,7 +206,7 @@
                              }})]
       (is (= {:value   {:a {:a1 :a12}}
               :actions [{:type  :glas-state/send
-                         :event :done/..a.a1}]
+                         :event :done/.a.a1}]
               :context nil} state)))
     (let [state (start-machine
 
@@ -215,7 +215,8 @@
                              :b {}
                              }})]
       (is (= {:value   :a
-              :actions [(done-event "")]
+              :actions [{:type :glas-state/send
+                         :event :done/.}]
               :context nil} state)))
     (let [state (start-machine
                   {:initial :a
@@ -375,3 +376,58 @@
         ]
     )
   )
+(deftest ^:test-refresh/focus done-events-tests
+  (let [the-machine {:initial :a
+                     :id :test
+                     :states {:a {:type :parallel
+                                  :states {:par1 {:initial :par11
+                                                  :states {:par11 {:on {:switch :par12}}
+                                                           :par12 {:type :final}}}
+                                           :par2 {:type :final}}}}}
+        state (start-machine the-machine)
+        _ (validate {:value {:a {:par1 :par11 :par2 nil}} :context nil} state)
+        state (transition-machine the-machine state :switch)
+        _ (validate {:value {:a {:par1 :par12 :par2 nil}} :actions [(done-event ".a")] :context nil} state)
+        the-machine {:id :shopping
+                     :type :parallel
+                     :states {:user {:initial :pending
+                                     :states {:pending {:on {:resolve-user :success
+                                                             :reject-user :failure}}
+                                              :success {:type :final}
+                                              :failure {}
+                                              }}
+                              :items {:initial :pending
+                                      :states {:pending {:on {:resolve-items :success
+                                                              :reject-items :failure}}
+                                               :success {:type :final}
+                                               :failure {}}}}
+                     :on-done {:actions (assign (fn [c e] assoc c :done true))
+                               }}
+        state (start-machine the-machine)
+        _ (validate {:value {:user :pending :items :pending} :context nil} state)
+        state (transition-machine the-machine state :resolve-user)
+        _ (validate {:value {:user :success :items :pending} :context nil} state)
+        state (transition-machine the-machine state :resolve-items)
+        _ (validate {:value {:user :success :items :success} :actions [(done-event "")] :context nil} state)
+        the-machine {:id :test
+                     :initial :state-a
+                     :on-done {:actions :root-done}
+                     :states {
+                              :state-a {:initial :state-aa
+                                        :on {:go-b :state-b}
+                                        :on-done {:actions :a-done}
+                                        :states {:state-aa {:initial :state-aaa
+                                                            :on {:go-bb :state-bb}
+                                                            :on-done {:actions :aa-done}
+                                                            :states {:state-aaa {:on {:go-bbb :state-bbb}}
+                                                                     :state-bbb {:type :final}}}
+                                                 :state-bb {:type :final}}}
+                              :state-b {:type :final} }
+                     }
+        state (start-machine the-machine)
+        _ (validate {:value {:state-a {:state-aa :state-aaa}}} state)
+        state (transition-machine the-machine state :go-bbb)
+        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [(done-event ".state-a.state-aa")]} state)
+        state (transition-machine the-machine state :done/.state-a.state-aa)
+        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [:aa-done]} state)
+        ]))

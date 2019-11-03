@@ -33,7 +33,8 @@
 (defn state-id-to-str [id]
   (cond
     (string? id) id
-    (keyword? id) (subs (str id) 1)))
+    (keyword? id) (subs (str id) 1)
+    :else (str id)))
 
 
 (defn combine-name [parent-name child-name]
@@ -47,7 +48,7 @@
 (defn make-id-absolute [id]
   (cond
     (string? id) (subs id 1)
-    (keyword? id) (keyword (namespace id)(subs (name id) 1))))
+    (keyword? id) (keyword (namespace id) (subs (name id) 1))))
 
 (defn assign [context-update-fn]
   "Creates an event that will assign a new context value using the context-update-fn.
@@ -71,8 +72,15 @@
    {:type  :glas-state/send
     :event event}))
 
+(defn create-done-event-type [name]
+  (let [str-name (state-id-to-str name)]
+    (if (empty? str-name)
+      :done/.
+      (keyword "done" str-name))
+    ))
+
 (defn done-event [name]
-  (send-event (keyword "done" (str "." name))))
+  (send-event (create-done-event-type name)))
 
 (declare final-node?)
 
@@ -98,13 +106,13 @@
 (defn create-invoke-event [invoke-propertie]
   (assert (or (nil? invoke-propertie) (:id invoke-propertie)))
   (if invoke-propertie
-    {:type :glas-state/invoke
+    {:type   :glas-state/invoke
      :config invoke-propertie}
     nil))
 (defn create-invoke-cleanup-event [invoke-propertie]
   (if invoke-propertie
     {:type :glas-state/invoke-cleanup
-     :id (:id invoke-propertie)}
+     :id   (:id invoke-propertie)}
     nil))
 
 (defn- create-initial-leaf-transition-state [parent-name {:keys [entry invoke]}]
@@ -209,41 +217,47 @@
     child-id))
 
 
-(defn- get-event-handler [node guards context event]
-  (let [event-handler (get-in node [:on (event-type event)])]
+(defn- get-event-handler [node-name node guards context event]
+  (let [done-event-name (create-done-event-type node-name)
+        ;_ (println "GET-EVENT-HANDLER: node-name=" node-name " event-name:" done-event-name " event:" event)
+        ;_ (println "ON-DONE "  (get  node :on-done))
+        event-handler (if (= done-event-name event)
+                        (get node :on-done)
+                        (get-in node [:on (event-type event)]))]
     (find-valid-handler event-handler guards context event)))
 
 
 (declare create-transition-state)
 
 
-(defn create-leaf-transition-state [node guards context event]
-  (let [event-handler (get-event-handler node guards context event)
+(defn create-leaf-transition-state [node-name node guards context event]
+  (let [event-handler (get-event-handler node-name node guards context event)
         new-target (:target event-handler)
         final? (= (:type node) :final)]
-    (if final?
-      {:handled true
-       :actions []}
-     (if event-handler
-       (if new-target
-         ;Not internal
-         {:actions (action-array [(:actions event-handler) (create-invoke-cleanup-event (:invoke node)) (:exit node)])
-          :target  new-target
-          :handled true}
-         ;Internal
-         {:actions (action-array (:actions event-handler))
-          :handled true})
-       ;Not handled...
-       {:actions (action-array [(:exit node) (create-invoke-cleanup-event (:invoke node))])
-        :handled false}))
+    ;(if final?
+    ;  {:handled true
+    ;   :actions []}
+    (if event-handler
+      (if new-target
+        ;Not internal
+        {:actions (action-array [(:actions event-handler) (create-invoke-cleanup-event (:invoke node)) (:exit node)])
+         :target  new-target
+         :handled true}
+        ;Internal
+        {:actions (action-array (:actions event-handler))
+         :handled true})
+      ;Not handled...
+      {:actions (action-array [(:exit node) (create-invoke-cleanup-event (:invoke node))])
+       :handled false})
     ))
 
 (defn create-branch-transition-state [parent-name node guards value context event]
   (let [current-child-id (child-id value)
+        node-name (combine-name parent-name current-child-id)
         states (:states node)
         current-child-def (get states current-child-id)
         current-child-value (get value current-child-id)
-        current-child-result (create-transition-state (combine-name parent-name current-child-id)
+        current-child-result (create-transition-state node-name
                                                       current-child-def
                                                       guards
                                                       current-child-value
@@ -267,25 +281,25 @@
            :value   (create-child-value current-child-id (:value current-child-result))
            :handled true})
         ; We need to handle the event on this level
-        (let [event-handler (get-event-handler node guards context event)
+        (let [event-handler (get-event-handler parent-name node guards context event)
               child-exit-actions (:actions current-child-result)
               new-target (:target event-handler)]
           (if event-handler
             (if new-target
               ;Not internal
               (if (relative-id? new-target)
-                (let[absolute-target (make-id-absolute new-target)
-                     new-child-node (get states absolute-target)
-                     _ (assert new-child-node (str "Can't find relative child " new-target " for node " node))
-                     new-child-result (create-initial-transition-state (combine-name parent-name absolute-target) new-child-node)
-                     done-action (when (leaf-final-node? new-child-node) (done-event parent-name))]
+                (let [absolute-target (make-id-absolute new-target)
+                      new-child-node (get states absolute-target)
+                      _ (assert new-child-node (str "Can't find relative child " new-target " for node " node))
+                      new-child-result (create-initial-transition-state (combine-name parent-name absolute-target) new-child-node)
+                      done-action (when (leaf-final-node? new-child-node) (done-event parent-name))]
                   {:actions (action-array [actions (:actions event-handler) (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
-                   :value (create-child-value absolute-target (:value new-child-result))
+                   :value   (create-child-value absolute-target (:value new-child-result))
                    :handled true})
                 {:actions (action-array [(:actions event-handler) child-exit-actions (:exit node) (create-invoke-cleanup-event (:invoke node))])
-                :target  new-target
-                :value   value
-                :handled true})
+                 :target  new-target
+                 :value   value
+                 :handled true})
               ;Internal
               {:actions (action-array [(:actions event-handler) child-exit-actions])
                :value   value
@@ -324,7 +338,7 @@
          :actions        (action-array [child-actions])
          })
       ;We have to handle the event on this level...
-      (let [event-handler (get-event-handler node guards context event)
+      (let [event-handler (get-event-handler parent-name node guards context event)
             new-target (:target event-handler)]
         (if event-handler
           (if new-target
@@ -347,7 +361,7 @@
 (defn create-transition-state [parent-name node guards value context event]
 
   (case (node-type node)
-    :leaf (create-leaf-transition-state node guards context event)
+    :leaf (create-leaf-transition-state parent-name node guards context event)
     :parallel (create-parallel-transition-state parent-name node guards value context event)
     :branch (create-branch-transition-state parent-name node guards value context event)))
 
