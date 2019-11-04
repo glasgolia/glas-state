@@ -77,7 +77,7 @@
                                  :b {}}
                     :guards     (:guards options)
                     :actions    nil
-                    :activities nil
+                    :activity-functions nil
                     :services   nil}]
       (is (= expected (machine-options m-def options))))))
 (deftest start-machine-test
@@ -376,7 +376,7 @@
         ]
     )
   )
-(deftest ^:test-refresh/focus done-events-tests
+(deftest ^:test-refresh/focus-not done-events-tests
   (let [the-machine {:initial :a
                      :id :test
                      :states {:a {:type :parallel
@@ -431,3 +431,23 @@
         state (transition-machine the-machine state :done/.state-a.state-aa)
         _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [:aa-done]} state)
         ]))
+(deftest ^:test-refresh/focus-not activitie-test
+  (let[
+       the-machine {:id :activity-test
+                    :initial :start
+                    :states {:start {:activities [:act-1]
+                                     :initial :sub1
+                                     :on {:done :done}
+                                     :states {:sub1 {:on {:next :sub2}}
+                                              :sub2 {:on {:next :sub1}
+                                                     :activities [:act-1 :act-2]}}}
+                             :done {:type :final}}}
+       state (start-machine the-machine)
+       _ (validate {:value {:start :sub1} :actions [(create-activities-event [:act-1])]} state)
+       state (transition-machine the-machine state :next)
+       _ (validate {:value {:start :sub2} :actions [(create-activities-event [:act-1 :act-2])]} state)
+       state (transition-machine the-machine state :next)
+       _ (validate {:value {:start :sub1} :actions [(create-activities-cleanup-event[:act-1 :act-2])]} state)
+       state (transition-machine the-machine state :done)
+       _ (validate {:value :done :actions [(create-activities-cleanup-event[:act-1])(done-event ".")]} state)
+       ]))

@@ -103,24 +103,36 @@
     :parallel (parallel-final-node? node value)
     :branch (branch-final-node? node value)))
 
-(defn create-invoke-event [invoke-propertie]
-  (assert (or (nil? invoke-propertie) (:id invoke-propertie)))
-  (if invoke-propertie
+(defn create-invoke-event [invoke-property ]
+  (assert (or (nil? invoke-property) (:id invoke-property)))
+  (if invoke-property
     {:type   :glas-state/invoke
-     :config invoke-propertie}
+     :config invoke-property}
     nil))
-(defn create-invoke-cleanup-event [invoke-propertie]
-  (if invoke-propertie
+(defn create-invoke-cleanup-event [invoke-property]
+  (if invoke-property
     {:type :glas-state/invoke-cleanup
-     :id   (:id invoke-propertie)}
+     :id   (:id invoke-property)}
     nil))
 
-(defn- create-initial-leaf-transition-state [parent-name {:keys [entry invoke]}]
+(defn create-activities-event [activities-property]
+  (assert (or (nil? activities-property) (vector? activities-property)) "activities should be a vector of activity id's")
+  (if activities-property
+    {:type :glas-state/start-activities
+     :ids activities-property}
+    nil))
+
+(defn create-activities-cleanup-event [activities-property]
+  (if activities-property
+    {:type :glas-state/stop-activities
+     :ids  activities-property}))
+
+(defn- create-initial-leaf-transition-state [parent-name {:keys [entry invoke  activities]}]
   (merge
-    {:actions (action-array [entry (create-invoke-event invoke)])}
+    {:actions (action-array [entry (create-invoke-event invoke) (create-activities-event activities)])}
     ))
 
-(defn create-initial-branch-transition-state [parent-name {:keys [initial states entry invoke] :as node}]
+(defn create-initial-branch-transition-state [parent-name {:keys [initial states entry invoke activities] :as node}]
   (assert initial (str "Need an initial state for " node))
   (let [child-node (get states initial)
         child-result (create-initial-transition-state (combine-name parent-name initial) child-node)
@@ -131,11 +143,15 @@
                               {initial child-value}
                               initial)
             :on-done-events (action-array [done-action])
-            :actions        (action-array [entry (create-invoke-event invoke) (:actions child-result) (:on-done-events child-result)])}))
+            :actions        (action-array [entry
+                                           (create-invoke-event invoke)
+                                           (create-activities-event activities)
+                                           (:actions child-result)
+                                           (:on-done-events child-result)])}))
   )
 
 
-(defn create-initial-parallel-transition-state [parent-name {:keys [states entry invoke]}]
+(defn create-initial-parallel-transition-state [parent-name {:keys [states entry invoke activities]}]
   (let [child-results (map (fn [[key child-node]]
                              [key (create-initial-transition-state nil child-node)]) states)
         child-values (into {} (map (fn [[k v]]
@@ -148,7 +164,11 @@
     (merge
       {:value          child-values
        :on-done-events (action-array [done-action])
-       :actions        (action-array [entry (create-invoke-event invoke) child-actions child-done-actions])}))
+       :actions        (action-array [entry
+                                      (create-invoke-event invoke)
+                                      (create-activities-event activities)
+                                      child-actions
+                                      child-done-actions])}))
   )
 
 (defn create-initial-transition-state
@@ -163,12 +183,12 @@
 
 (defn machine-options
   "Create a new machine definition by merging the
-  :guards, :actions, :activities :context and :service values
+  :guards, :actions, :activity-functions :context and :service values
   in the options map"
   [machine options]
   (merge-with into machine {:guards     (:guards options)
                             :actions    (:actions options)
-                            :activities (:activities options)
+                            :activity-functions (:activity-functions options)
                             :context    (:context options)
                             :services   (:services options)})
   )
@@ -230,31 +250,31 @@
 (declare create-transition-state)
 
 
-(defn create-leaf-transition-state [node-name node guards context event]
+(defn create-leaf-transition-state [node-name {:keys [invoke exit activities] :as node} guards context event]
   (let [event-handler (get-event-handler node-name node guards context event)
-        new-target (:target event-handler)
-        final? (= (:type node) :final)]
-    ;(if final?
-    ;  {:handled true
-    ;   :actions []}
+        new-target (:target event-handler)]
     (if event-handler
       (if new-target
         ;Not internal
-        {:actions (action-array [(:actions event-handler) (create-invoke-cleanup-event (:invoke node)) (:exit node)])
+        {:actions (action-array [(:actions event-handler)
+                                 (create-activities-cleanup-event activities)
+                                 (create-invoke-cleanup-event invoke)
+                                 exit])
          :target  new-target
          :handled true}
         ;Internal
         {:actions (action-array (:actions event-handler))
          :handled true})
       ;Not handled...
-      {:actions (action-array [(:exit node) (create-invoke-cleanup-event (:invoke node))])
+      {:actions (action-array [exit
+                               (create-activities-cleanup-event activities)
+                               (create-invoke-cleanup-event invoke)])
        :handled false})
     ))
 
-(defn create-branch-transition-state [parent-name node guards value context event]
+(defn create-branch-transition-state [parent-name {:keys [states exit invoke activities] :as node} guards value context event]
   (let [current-child-id (child-id value)
         node-name (combine-name parent-name current-child-id)
-        states (:states node)
         current-child-def (get states current-child-id)
         current-child-value (get value current-child-id)
         current-child-result (create-transition-state node-name
@@ -296,7 +316,12 @@
                   {:actions (action-array [actions (:actions event-handler) (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
                    :value   (create-child-value absolute-target (:value new-child-result))
                    :handled true})
-                {:actions (action-array [(:actions event-handler) child-exit-actions (:exit node) (create-invoke-cleanup-event (:invoke node))])
+                {:actions (action-array [(:actions event-handler)
+                                         child-exit-actions
+                                         exit
+                                         (create-invoke-cleanup-event invoke)
+                                         (create-activities-cleanup-event activities)
+                                         ])
                  :target  new-target
                  :value   value
                  :handled true})
@@ -305,7 +330,10 @@
                :value   value
                :handled true})
             ;Not handled...
-            {:actions (action-array [child-exit-actions (:exit node) (create-invoke-cleanup-event (:invoke node))])
+            {:actions (action-array [child-exit-actions
+                                     exit
+                                     (create-invoke-cleanup-event invoke)
+                                     (create-activities-cleanup-event  activities)])
              :value   value
              :handled false})
           )
@@ -314,7 +342,7 @@
 
 
 
-(defn create-parallel-transition-state [parent-name node guards value context event]
+(defn create-parallel-transition-state [parent-name {:keys [exit invoke activities] :as node} guards value context event]
   (let [child-node (:states node)
         child-results (into {} (map (fn [[k v]]
                                       [k (create-transition-state (combine-name parent-name k)
@@ -343,16 +371,27 @@
         (if event-handler
           (if new-target
             ;Not internal
-            {:actions (action-array [child-actions (:actions event-handler) (:exit node) (create-invoke-cleanup-event (:invoke node)) child-done-actions])
+            {:actions (action-array [child-actions
+                                     (:actions event-handler)
+                                     exit
+                                     (create-invoke-cleanup-event invoke)
+                                     (create-activities-cleanup-event activities)
+                                     child-done-actions])
              :target  new-target
              :value   value
              :handled true}
             ;Internal
-            {:actions (action-array [child-actions (:actions event-handler) child-done-actions])
+            {:actions (action-array [child-actions
+                                     (:actions event-handler)
+                                     child-done-actions])
              :value   value
              :handled true})
           ;Not handled...
-          {:actions (action-array [child-actions (:exit node) (create-invoke-cleanup-event (:invoke node)) child-done-actions])
+          {:actions (action-array [child-actions
+                                   exit
+                                   (create-invoke-cleanup-event invoke)
+                                   (create-activities-cleanup-event activities)
+                                   child-done-actions])
            :value   value
            :handled false})
         ))))

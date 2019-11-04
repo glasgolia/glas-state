@@ -19,6 +19,35 @@
 
 (declare dispatch)
 
+(defn- start-activities [{:keys [storage machine] :as service} context action]
+  (let [activities (:ids action)
+        running (:activities @storage)]
+    (doseq [activity-event activities]
+      (let [id (sl/event-type activity-event)
+            started? (contains? running id)]
+        (when (not started?)
+          (let [fun (:activity-functions machine)
+                stop-fun (when fun (fun context activity-event))]
+            (if stop-fun
+              (swap! (:activities service) assoc id stop-fun))
+            (swap! storage (fn [state]
+                             (assoc state :activities (conj (:activities state) id))))
+            ))))))
+
+(defn stop-activities [{:keys [storage] :as service} context action]
+  (let [activities (:ids action)
+        running (:activities @storage)]
+    (doseq [activity-event activities]
+      (let [id (sl/event-type activity-event)
+            started? (contains? running id)]
+        (when started?
+          (let [stop-fun @(:activities service)]
+            (when stop-fun
+              (swap! (:activities service) dissoc id)
+              (stop-fun))
+            (swap! storage (fn [state]
+                             (assoc state :activities (dissoc (:activities state) id))))))))
+    ))
 
 (defn- invoke-child [service context action]
   (let [invoke (:config action)
@@ -86,6 +115,10 @@
                                                        context)
                                 :glas-state/invoke-cleanup (do (invoke-child-cleanup service context action)
                                                                context)
+                                :glas-state/start-activities (do (start-activities service context action)
+                                                                 context)
+                                :glas-state/stop-activities (do (stop-activities service context action)
+                                                                context)
                                 (ex-info "Unknown internal action" {:action action}))
                               context)))
           :else context)))
@@ -109,7 +142,7 @@
       (let [next-action (first a)]
         (if next-action
           (let [new-context (action-handler inst c next-action event #_{:action next-action
-                                                                      :state  new-state-value})]
+                                                                        :state  new-state-value})]
             (recur new-context (rest a)))
           c))
       )
@@ -222,6 +255,7 @@
                  :delayed-events        (atom {})
                  :action-handler        sync-action-handler
                  :child-services        (atom {})
+                 :activities            (atom {})
                  :service-data          service-data
                  :child-service-creator (or child-service-creator create-service)}]
      (if (or (nil? auto-start) auto-start)
