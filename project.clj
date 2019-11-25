@@ -3,7 +3,7 @@
   :url "https://github.com/glasgolia/glas-state"
   :license {:name "MIT"}
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [org.clojure/clojurescript "1.10.520"]
+                 [org.clojure/clojurescript "1.10.597"]
                  [org.clojure/core.async "0.4.500"]]
   :repl-options {:init-ns glasgolia.glas-state.core}
   :plugins [[lein-cljsbuild "1.1.7"]]
