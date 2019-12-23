@@ -11,12 +11,14 @@
 ; from stateless namespace
 (def assign sl/assign)
 (def send-event sl/send-event)
+(def send-parent-event sl/send-parent-event)
 (def value-to-ids sl/value-to-ids)
 (def leaf-value-to-ids sl/leaf-value-to-ids)
 
 
 ; from service namespace
 (def service-logger i/service-logger)
+(def create-service-logger i/create-service-logger)
 (def create-service i/create-service)
 (def start i/start)
 (def stop i/stop)
