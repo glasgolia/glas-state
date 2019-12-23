@@ -94,7 +94,7 @@
                                     (ex-info "Unknown assigner in : " action)
                                     (fun context event)))
                                 :glas-state/send (let [new-event (:event action)
-                                                       new-event (if (fn? new-event) (new-event context event) event)
+                                                       new-event (if (fn? new-event) (new-event context event) new-event)
                                                        delay-context (:delay-context action)]
                                                    (if delay-context
                                                      (as/go (as/>! @send-channel {:event         new-event
@@ -102,7 +102,7 @@
                                                      (as/go (as/>! @send-channel {:event new-event})))
                                                    context)
                                 :glas-state/send-parent (let [new-event (:event action)
-                                                              new-event (if (fn? new-event) (new-event context event) event)
+                                                              new-event (if (fn? new-event) (new-event context event) new-event)
                                                               parent-callback (:parent-send service)]
                                                           (if parent-callback
                                                             (parent-callback new-event)
