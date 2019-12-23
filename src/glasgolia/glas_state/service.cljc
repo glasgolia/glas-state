@@ -17,6 +17,17 @@
       (when (not= prev-context new-context)
         (println "CONTEXT: " new-context " <-- " prev-context)))))
 
+(defn create-service-logger [service-name]
+  (fn [{:keys [prev new]}]
+    (let [prev-value (:value prev)
+          new-value (:value new)
+          prev-context (:context prev)
+          new-context (:context new)]
+      (when (not= prev-value new-value)
+        (println (str "[" service-name "]") "VALUE: " new-value " <-- " prev-value))
+      (when (not= prev-context new-context)
+        (println (str "[" service-name "]") "CONTEXT: " new-context " <-- " prev-context)))))
+
 (declare dispatch)
 
 
@@ -44,6 +55,13 @@
     (swap! (:child-services service) assoc id child-service-def)
     context
     ))
+(defn- dispatch-to-child-service [service child-service-id event]
+  (let [child-services @(:child-services service)
+        child-service (get child-services child-service-id)
+        _ (assert child-service (str "Child service not found: " child-service-id))
+        child-listener @(:listener child-service)]
+    (when child-listener
+      (child-listener event))))
 
 (defn- invoke-child-cleanup [service context event]
   (let [child-services @(:child-services service)
@@ -75,12 +93,13 @@
                                   (if (nil? fun)
                                     (ex-info "Unknown assigner in : " action)
                                     (fun context event)))
-                                :glas-state/send (let [event (:event action)
+                                :glas-state/send (let [new-event (:event action)
+                                                       new-event (if (fn? new-event) (new-event context event) event)
                                                        delay-context (:delay-context action)]
                                                    (if delay-context
-                                                     (as/go (as/>! @send-channel {:event         event
+                                                     (as/go (as/>! @send-channel {:event         new-event
                                                                                   :delay-context delay-context}))
-                                                     (as/go (as/>! @send-channel {:event event})))
+                                                     (as/go (as/>! @send-channel {:event new-event})))
                                                    context)
                                 :glas-state/invoke (do (invoke-child service context action)
                                                        context)
@@ -109,7 +128,7 @@
       (let [next-action (first a)]
         (if next-action
           (let [new-context (action-handler inst c next-action event #_{:action next-action
-                                                                      :state  new-state-value})]
+                                                                        :state  new-state-value})]
             (recur new-context (rest a)))
           c))
       )
@@ -128,7 +147,9 @@
 
 
 (defn- handle-event [{:keys [storage machine send-channel] :as inst} {:keys [event waiting-channel delay-context]}]
-  (if delay-context
+  "Main Event handler"
+  (if (:delay delay-context)
+    ;Send delayed event
     (let [id (or (:id delay-context) event)
           delay (:delay delay-context)
           cancel-channel (as/chan 1)
@@ -141,15 +162,20 @@
           (as/close! cancel-channel)
           (swap! (:delayed-events inst) dissoc id)))
       )
-    (swap! storage (fn [prev-state]
-                     (let [context (:context prev-state)
-                           new-state (sl/transition-machine machine prev-state event)
-                           new-context (send-actions inst context (:actions new-state) event (:value new-state))
-                           new-state (-> new-state
-                                         (dissoc :actions)
-                                         (assoc :context new-context))]
-                       (notify-listeners inst prev-state new-state)
-                       new-state))))
+    ;Not a delayed event
+    (if (:to delay-context)
+      ;Send to Child service
+      (dispatch-to-child-service inst (:to delay-context) event)
+      ;Send to this service
+      (swap! storage (fn [prev-state]
+                       (let [context (:context prev-state)
+                             new-state (sl/transition-machine machine prev-state event)
+                             new-context (send-actions inst context (:actions new-state) event (:value new-state))
+                             new-state (-> new-state
+                                           (dissoc :actions)
+                                           (assoc :context new-context))]
+                         (notify-listeners inst prev-state new-state)
+                         new-state)))))
   (when waiting-channel
     (as/close! waiting-channel)))
 
@@ -238,10 +264,13 @@
   ([{:keys [send-channel machine] :as _service} event]
    (if @send-channel
      (as/go (as/>! @send-channel {:event event}))
-     (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event})))
+     (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event}))
+   nil)
   ([{:keys [send-channel machine]} event delay-context]
    (when (not @send-channel) (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event :delay delay-context}))
-   (as/go (as/>! @send-channel {:event event :delay-context delay-context}))))
+   (as/go (as/>! @send-channel {:event event :delay-context delay-context}))
+   nil)
+  )
 
 
 #?(:clj

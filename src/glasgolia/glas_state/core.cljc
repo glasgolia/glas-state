@@ -17,6 +17,7 @@
 
 ; from service namespace
 (def service-logger i/service-logger)
+(def create-service-logger i/create-service-logger)
 (def create-service i/create-service)
 (def start i/start)
 (def stop i/stop)
