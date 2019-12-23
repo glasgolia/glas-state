@@ -11,6 +11,7 @@
 ; from stateless namespace
 (def assign sl/assign)
 (def send-event sl/send-event)
+(def send-parent-event sl/send-parent-event)
 (def value-to-ids sl/value-to-ids)
 (def leaf-value-to-ids sl/leaf-value-to-ids)
 

@@ -61,7 +61,7 @@
 (defn send-event
   "Creates an event that will send a new event to the current machine.
   You should only use this in the machine definition.
-  The function expected an event as first argument, and an optional
+  The function expected an event or function returning an event as first argument, and an optional
   delay-context map as second argument"
   ([event delay-context]
    {:type          :glas-state/send
@@ -70,6 +70,14 @@
   ([event]
    {:type  :glas-state/send
     :event event}))
+
+(defn send-parent-event
+  "Creates an event that will send a new event to the parent of the current machine.
+  You should only use this in the machine definition.
+  The function expected an event or function returning an event as first argument"
+  [event]
+  {:type  :glas-state/send-parent
+   :event event})
 
 
 (defn done-event [name]

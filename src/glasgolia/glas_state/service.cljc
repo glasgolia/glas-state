@@ -101,6 +101,12 @@
                                                                                   :delay-context delay-context}))
                                                      (as/go (as/>! @send-channel {:event new-event})))
                                                    context)
+                                :glas-state/send-parent (let [new-event (:event action)
+                                                              new-event (if (fn? new-event) (new-event context event) event)
+                                                              parent-callback (:parent-send service)]
+                                                          (if parent-callback
+                                                            (parent-callback new-event)
+                                                            context))
                                 :glas-state/invoke (do (invoke-child service context action)
                                                        context)
                                 :glas-state/invoke-cleanup (do (invoke-child-cleanup service context action)
