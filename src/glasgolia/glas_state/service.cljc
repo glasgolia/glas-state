@@ -151,8 +151,23 @@
               :cljs :default) e (ex-info "Exception while executing statechart action!" {:machine-id (:id machine)
                                                                                          :action     action
                                                                                          :event      event} e))))
-
-(defn notify-listeners [{:keys [change-listener]} prev-state new-state]
+(defn- notify-reactions [reactions old-value new-value]
+  (doseq [[_key reaction] reactions]
+    (try
+      (reaction old-value new-value)
+      (catch #?(:clj  Exception
+                :cljs :default) e (ex-info "Exception while notifying reactors of stateschart service!"
+                                           {:prev-state old-value :new-state new-value} e))))
+  )
+(defn notify-listeners [{:keys [change-listener value-reactions context-reactions]} prev-state new-state]
+  (let [old-value (:value prev-state)
+        new-value (:value new-state)]
+    (when-not (= old-value new-value)
+      (notify-reactions @value-reactions old-value new-value)))
+  (let [old-value (:context prev-state)
+        new-value (:context new-state)]
+    (when-not (= old-value new-value)
+      (notify-reactions @context-reactions old-value new-value)))
   (when change-listener
     (try
       (change-listener {:prev prev-state :new new-state})
@@ -288,6 +303,9 @@
                  :action-handler        sync-action-handler
                  :child-services        (atom {})
                  :activities            (atom {})
+                 :value-reactions       (atom [])
+                 :context-reactions     (atom [])
+
                  :service-data          service-data
                  :child-service-creator (or child-service-creator create-service)}]
      (if (or (nil? auto-start) auto-start)
@@ -296,6 +314,58 @@
      ))
   ([the-machine]
    (create-service the-machine {})))
+
+(defn service-value [{:keys [storage] :as _service}]
+  "Return the current value of this service"
+  (:value @storage))
+(defn service-context [{:keys [storage] :as _service}]
+  "Return the current context of this service"
+  (:context @storage))
+
+(defn- add-reaction
+
+  ([reaction-atom reaction]
+   (let [reaction-key (gensym)]
+     (swap! reaction-atom conj [reaction-key reaction])
+     (fn []
+       (swap! reaction-atom (fn [l] (into [] (filter (fn [p] (not= (first p) reaction-key)) l)))))))
+  ([reaction reaction-atom transformer]
+   (if (vector? transformer)
+     (add-reaction reaction-atom reaction (fn [v] (get-in v transformer)))
+     (add-reaction reaction-atom (fn [old new]
+                                   (let [old (transformer old)
+                                         new (transformer new)]
+                                     (when (not= old new)
+                                       (reaction old new))))))))
+(defn add-value-reaction
+  "Add a reaction when there is a value state change.
+ The reaction must be a function that takes the old value and the new value.
+ The optional transformer can be a function that takes a value and transforms it,
+ or a vector that will be used as the get-in path for values.
+ This functions returns a function that can be called  to remove the reaction from the service."
+  ([service reaction]
+   (let [value (service-value service)]
+         (reaction value value))
+    (add-reaction (:value-reactions service) reaction))
+  ([service reaction transformer]
+   (let [value (transformer (service-value service))]
+         (reaction value value))
+   (add-reaction (:value-reactions service) reaction transformer)))
+
+(defn add-context-reaction
+  "Add a reaction when there is a context state change.
+ The reaction must be a function that takes the old value and the new value.
+ The optional transformer can be a function that takes a value and transforms it,
+ or a vector that will be used as the get-in path for values.
+ This functions returns a function that can be called  to remove the reaction from the service."
+  ([service reaction]
+   (let [value (service-context service)]
+     (reaction value value))
+   (add-reaction (:context-reactions service) reaction))
+  ([service reaction transformer]
+   (let [value (transformer (service-context service))]
+     (reaction value value))
+   (add-reaction (:context-reactions service) reaction transformer)))
 
 (defn dispatch
   "Dispatch an event to this service.
@@ -329,12 +399,7 @@
   "Return the full current state of this service"
   (:context @storage))
 
-(defn service-value [{:keys [storage] :as _service}]
-  "Return the current value of this service"
-  (:value @storage))
-(defn service-context [{:keys [storage] :as _service}]
-  "Return the current context of this service"
-  (:context @storage))
+
 
 (comment
   (def delay-test-machine {:initial :red

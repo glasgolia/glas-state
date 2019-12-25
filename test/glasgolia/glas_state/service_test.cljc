@@ -69,6 +69,31 @@
    :context {:list     []
              :selected nil}})
 
+
+(deftest ^:test-refresh/focus reactions-test
+  (let [state (atom {})
+        reactions-result (atom {})
+        inst (-> (create-service {:id      test
+                                  :initial :idle
+                                  :states  {:idle  {:on {:next :start}}
+                                            :start {:on {:next :stop}}
+                                            :stop  {}}}
+                                 {:state-atom      state
+                                  :change-listener service-logger})
+                 (start))
+        remove-reactor1 (add-value-reaction inst (fn [old new]
+                                                   (println "GOT REACTION" old new)
+                                                   (reset! reactions-result {:old old :new new})))
+        remove-reactor2 (add-context-reaction inst (fn [old new]))
+        _ (println "VALUE:" (service-value inst))
+        _ (dispatch-and-wait inst :next)
+        _ (is (= @reactions-result {:old :idle :new :start}))
+        _ (remove-reactor1)
+        _ (dispatch-and-wait inst :next)
+        _ (is (= @reactions-result {:old :idle :new :start}))
+
+        ]))
+
 (deftest ^:test-refresh/focus-not on-with-actions-test
 
   (let [state (atom {})
