@@ -112,23 +112,29 @@
     :parallel (parallel-final-node? node value)
     :branch (branch-final-node? node value)))
 
-(defn create-invoke-event [invoke-property ]
-  (assert (or (nil? invoke-property) (:id invoke-property)))
-  (if invoke-property
-    {:type   :glas-state/invoke
-     :config invoke-property}
-    nil))
+(defn create-invoke-event [invoke-property]
+  (if (vector? invoke-property)
+    (into [] (map create-invoke-event invoke-property))
+    (do
+      (assert (or (nil? invoke-property) (:src invoke-property)))
+      (if invoke-property
+        {:type   :glas-state/invoke
+         :config invoke-property}
+        nil))))
+
 (defn create-invoke-cleanup-event [invoke-property]
-  (if invoke-property
-    {:type :glas-state/invoke-cleanup
-     :id   (:id invoke-property)}
-    nil))
+  (if (vector? invoke-property)
+    (into [] (map create-invoke-cleanup-event invoke-property))
+    (if invoke-property
+      {:type :glas-state/invoke-cleanup
+       :id   (:id invoke-property)}
+      nil)))
 
 (defn create-activities-event [activities-property]
   (assert (or (nil? activities-property) (vector? activities-property)) "activities should be a vector of activity id's")
   (if activities-property
     {:type :glas-state/start-activities
-     :ids activities-property}
+     :ids  activities-property}
     nil))
 
 (defn create-activities-cleanup-event [activities-property]
@@ -136,7 +142,7 @@
     {:type :glas-state/stop-activities
      :ids  activities-property}))
 
-(defn- create-initial-leaf-transition-state [parent-name {:keys [entry invoke  activities]}]
+(defn- create-initial-leaf-transition-state [parent-name {:keys [entry invoke activities]}]
   (merge
     {:actions (action-array [entry (create-invoke-event invoke) (create-activities-event activities)])}
     ))
@@ -195,11 +201,11 @@
   :guards, :actions, :activity-functions :context and :service values
   in the options map"
   [machine options]
-  (merge-with into machine {:guards     (:guards options)
-                            :actions    (:actions options)
+  (merge-with into machine {:guards             (:guards options)
+                            :actions            (:actions options)
                             :activity-functions (:activity-functions options)
-                            :context    (:context options)
-                            :services   (:services options)})
+                            :context            (:context options)
+                            :services           (:services options)})
   )
 
 
@@ -245,16 +251,36 @@
     {child-id child-value}
     child-id))
 
+(defn- get-invoke-done-handler [node event-type]
+    (let [invoke-services (:invoke  node)]
+    (if (vector? invoke-services)
+      (let [service (first (filter (fn [service]
+                             (let [id (:id service)
+                                   _ (assert id (str "Need an id for invoke with multiple services in node " node))
+                                   id (keyword "done.invoke" (str "child."  (name id)))]
+                               (= id event-type))) invoke-services))]
+        (:on-done service))
+      (:on-done invoke-services))) )
 
 (defn- get-event-handler [node-name node guards context event]
-  (let [done-event-name (create-done-event-type node-name)
+  (let [type (event-type event)
+        event-handler (cond
+                        (= (create-done-event-type node-name) type)
+                        (get node :on-done)
+
+                        (= (namespace type) "done.invoke")
+                        (get-invoke-done-handler node type)
+
+                        :else
+                        (get-in node [:on type]))]
+    (find-valid-handler event-handler guards context event))
+  #_(let [done-event-name (create-done-event-type node-name)
         ;_ (println "GET-EVENT-HANDLER: node-name=" node-name " event-name:" done-event-name " event:" event)
         ;_ (println "ON-DONE "  (get  node :on-done))
         event-handler (if (= done-event-name event)
                         (get node :on-done)
                         (get-in node [:on (event-type event)]))]
     (find-valid-handler event-handler guards context event)))
-
 
 (declare create-transition-state)
 
@@ -342,7 +368,7 @@
             {:actions (action-array [child-exit-actions
                                      exit
                                      (create-invoke-cleanup-event invoke)
-                                     (create-activities-cleanup-event  activities)])
+                                     (create-activities-cleanup-event activities)])
              :value   value
              :handled false})
           )

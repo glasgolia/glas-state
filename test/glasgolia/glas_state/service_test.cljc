@@ -15,16 +15,17 @@
    :states  {:a {:entry   :entry-a
                  :on      {:switch :b}
                  :invoke  {:id  :child-service-start
-                           :src (fn [context event]
-                                  (let []
-                                    (fn [callback on-event]
-                                      (println "Child Service Invoked")
-                                      (println "Context=" context)
-                                      (println "event=" event)
+                            :src (fn [context event]
+                                   (let []
+                                     (fn [callback on-event]
+                                       (println "Child Service Invoked")
+                                       (println "Context=" context)
+                                       (println "event=" event)
 
-                                      (fn [] (println "Child Service Cleanup Invoked")))
-                                    ))
-                           }
+                                       (fn [] (println "Child Service Cleanup Invoked")))
+                                     ))
+                           :on-done {:target :b}
+                            }
 
                  :initial :on
                  :states  {:on  {:entry (fn [c e]
@@ -47,6 +48,7 @@
           ]
       (is (= @state
              {:value {:a :on} :context {:we-where-in-a true}}))
+      (dispatch inst :hello :child-service-start  )
       (dispatch-and-wait inst :switch)
       (is (= @state
              {:value {:a :off} :context {:we-where-in-a true :the-a-light-was-off true}}))
@@ -70,7 +72,7 @@
              :selected nil}})
 
 
-(deftest ^:test-refresh/focus reactions-test
+(deftest ^:test-refresh/focus_not reactions-test
   (let [state (atom {})
         reactions-result (atom {})
         inst (-> (create-service {:id      test
@@ -117,3 +119,28 @@
         (dispatch inst :dummy)
         (is inst))))                                        ; TODO
 
+
+(deftest ^:test-refresh/focus child-machines
+  (let [inst (create-service {:id      :invoke-test
+                              :initial :a
+                              :states  {:a {:invoke [{:id :child-machine
+                                                       :src     {:id      :child-machine
+                                                                :entry   (fn [c e] (println "Child-machine entry..."))
+                                                                :initial :child-a
+                                                                :states  {:child-a    {:entry (fn [c e] (println "child-machine: in :child-a"))
+                                                                                       :on    {:next :child-done}}
+                                                                          :child-done {:type  :final
+                                                                                       :entry (fn [c e] (println "Child-machine in :child-done"))}}}
+                                                      :on-done {:target :b
+                                                                :actions (fn [c e] (println "Child-machine on-done -> send target b"))}}]}
+                                        :b {:entry (fn [c e] (println "Parent-machine entry :b"))
+                                            :type  :final}
+                                        }} {:change-listener service-logger})
+
+        _ (start inst)
+        _ (dispatch inst :next {:to :child-machine})
+        ;_ (dispatch inst :dummy)
+        _ (Thread/sleep 1000)
+        ])
+
+  )

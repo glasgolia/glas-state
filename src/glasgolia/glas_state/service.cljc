@@ -59,20 +59,47 @@
             (swap! storage (fn [state]
                              (assoc state :activities (dissoc (:activities state) id))))))))
     ))
+(declare stop)
+(defn- create-invoke-child-fn [service id src data invoke-event]
+  (cond
+    (map? src)
+    (fn [callback on-event]
+      (let [service-creator (:child-service-creator service)
+            child-machine (sl/machine-options src {:context data})
+            child-callback (fn [event]
+                             (if (= (sl/event-type event) :done/.)
+                               (callback {:type (keyword "done.invoke" (str "child." (name id)))
+                                          :data (:data event)})
+                               (callback event)))
+            child-service (service-creator child-machine {:parent-callback child-callback})]
+        (on-event (fn [event]
+                    (dispatch child-service event)))
+        (fn []
+          (stop child-service)))
+      )
 
+    (fn? src)
+    (src data invoke-event)))
+
+(defn- create-invoke-child-id [src]
+  (if (map? src)
+    (:id src)                                               ; The src is a map -> must be a machine
+    nil))
 (defn- invoke-child [service context action]
   (let [invoke (:config action)
-        id (:id invoke)
+
         src (:src invoke)
         src (if (keyword? src)
               (get-in service [:machine :services src])
               src)
-        _ (assert (fn? src) "Invoke src must be a function")
+        id (or (:id invoke) (create-invoke-child-id src))
+        ;_
+        ;_ (assert (fn? src) "Invoke src must be a function")
         data (:data invoke)
         data (if (fn? data)
                (data context action)
-               nil)
-        invoke-fn (src data action)
+               data)
+        invoke-fn (create-invoke-child-fn service id src data action)
         callback (fn [event] (dispatch service event))
         listener-atom (atom (fn [e] nil))
         on-event (fn [listener] (reset! listener-atom listener))
@@ -221,18 +248,20 @@
       ;Send to Child service
       (dispatch-to-child-service inst (:to delay-context) event)
       ;Send to this service
-      (swap! storage (fn [prev-state]
-                       (let [context (:context prev-state)
-                             new-state (sl/transition-machine machine prev-state event)
-                             new-context (send-actions inst context (:actions new-state) event (:value new-state))
-                             new-state (-> new-state
-                                           (dissoc :actions)
-                                           (assoc :context new-context))]
-                         (notify-listeners inst prev-state new-state)
-                         new-state)))))
+      (if (= :done/. (sl/event-type event))
+        (when-let [callback (:parent-send inst)]
+          (callback event))
+        (swap! storage (fn [prev-state]
+                         (let [context (:context prev-state)
+                               new-state (sl/transition-machine machine prev-state event)
+                               new-context (send-actions inst context (:actions new-state) event (:value new-state))
+                               new-state (-> new-state
+                                             (dissoc :actions)
+                                             (assoc :context new-context))]
+                           (notify-listeners inst prev-state new-state)
+                           new-state))))))
   (when waiting-channel
     (as/close! waiting-channel)))
-
 
 (defn start [{:keys [send-channel service-state] :as service}]
   "Starts a given service.
@@ -305,7 +334,6 @@
                  :activities            (atom {})
                  :value-reactions       (atom [])
                  :context-reactions     (atom [])
-
                  :service-data          service-data
                  :child-service-creator (or child-service-creator create-service)}]
      (if (or (nil? auto-start) auto-start)
@@ -345,11 +373,11 @@
  This functions returns a function that can be called  to remove the reaction from the service."
   ([service reaction]
    (let [value (service-value service)]
-         (reaction value value))
-    (add-reaction (:value-reactions service) reaction))
+     (reaction value value))
+   (add-reaction (:value-reactions service) reaction))
   ([service reaction transformer]
    (let [value (transformer (service-value service))]
-         (reaction value value))
+     (reaction value value))
    (add-reaction (:value-reactions service) reaction transformer)))
 
 (defn add-context-reaction
