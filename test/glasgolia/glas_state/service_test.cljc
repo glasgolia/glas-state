@@ -120,7 +120,7 @@
         (is inst))))                                        ; TODO
 
 
-(deftest ^:test-refresh/focus child-machines
+(deftest ^:test-refresh/focus_not child-machines
   (let [inst (create-service {:id      :invoke-test
                               :initial :a
                               :states  {:a {:invoke [{:id :child-machine

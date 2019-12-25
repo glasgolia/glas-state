@@ -347,7 +347,7 @@
     )
   )
 
-(deftest ^:test-refresh/focus-not invoke-test
+#_(deftest ^:test-refresh/focus-not invoke-test2
   (let [the-machine
         {:initial :a
          :states  {:a    {:invoke {:id :invoke-in-a}
