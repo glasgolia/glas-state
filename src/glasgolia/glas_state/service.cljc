@@ -85,8 +85,15 @@
   (fn [data event]
     (println data)
     (fn [callback on-event]
-      (future (let [result (call-fn data)]
+      (future (let [result (call-fn data callback)]
          (callback {:type :done/. :data result})))
+      nil)))
+(defn service-fn [fun]
+  (fn [data event]
+    (fn [callback on-event]
+      (on-event (fn [e]
+                  (println e)
+                  (future (fun e callback))))
       nil)))
 
 (defn- create-invoke-child-id [src]
@@ -283,7 +290,7 @@
   the entry actions for this initial state.
   If the service was already started, nothing will happen."
   (when (not= @service-state :started)
-    (let [sc (as/chan 20)]
+    (let [sc (as/chan 1)]
       (reset! send-channel sc)
       (as/go-loop [event (as/<! sc)]
         (if event
@@ -414,7 +421,7 @@
   If you want to delay the handling of the event an amount of time,
   you can add a delay context map containing {:delay <delay in ms> :id <delay-id, used to cancel if needed>}"
   ([{:keys [send-channel machine] :as _service} event]
-   (if @send-channel
+   (if (and send-channel @send-channel)
      (as/go (as/>! @send-channel {:event event}))
      (ex-info "Call start before dispatching events" {:machine-id (:id machine) :event event}))
    nil)

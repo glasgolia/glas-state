@@ -11,6 +11,7 @@
 ; from stateless namespace
 (def assign sl/assign)
 (def send-event sl/send-event)
+(def forward sl/forward)
 (def send-parent-event sl/send-parent-event)
 (def value-to-ids sl/value-to-ids)
 (def leaf-value-to-ids sl/leaf-value-to-ids)
@@ -28,6 +29,7 @@
 (def add-value-reaction i/add-value-reaction)
 (def add-context-reaction i/add-context-reaction)
 (def call i/call)
+(def service-fn i/service-fn)
 
 
 ; Access state...

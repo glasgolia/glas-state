@@ -71,6 +71,10 @@
   ([event]
    {:type  :glas-state/send
     :event event}))
+(defn forward
+  "An action that forward the initiating event to the service corresponding to the supplied service-id"
+  [service-id]
+  (send-event (fn [c e] e) {:to service-id}))
 
 (defn send-parent-event
   "Creates an event that will send a new event to the parent of the current machine.
@@ -252,15 +256,15 @@
     child-id))
 
 (defn- get-invoke-done-handler [node event-type]
-    (let [invoke-services (:invoke  node)]
+  (let [invoke-services (:invoke node)]
     (if (vector? invoke-services)
       (let [service (first (filter (fn [service]
-                             (let [id (:id service)
-                                   _ (assert id (str "Need an id for invoke with multiple services in node " node))
-                                   id (keyword "done.invoke" (str "child."  (name id)))]
-                               (= id event-type))) invoke-services))]
+                                     (let [id (:id service)
+                                           _ (assert id (str "Need an id for invoke with multiple services in node " node))
+                                           id (keyword "done.invoke" (str "child." (name id)))]
+                                       (= id event-type))) invoke-services))]
         (:on-done service))
-      (:on-done invoke-services))) )
+      (:on-done invoke-services))))
 
 (defn- get-event-handler [node-name node guards context event]
   (let [type (event-type event)
@@ -275,12 +279,12 @@
                         (get-in node [:on type]))]
     (find-valid-handler event-handler guards context event))
   #_(let [done-event-name (create-done-event-type node-name)
-        ;_ (println "GET-EVENT-HANDLER: node-name=" node-name " event-name:" done-event-name " event:" event)
-        ;_ (println "ON-DONE "  (get  node :on-done))
-        event-handler (if (= done-event-name event)
-                        (get node :on-done)
-                        (get-in node [:on (event-type event)]))]
-    (find-valid-handler event-handler guards context event)))
+          ;_ (println "GET-EVENT-HANDLER: node-name=" node-name " event-name:" done-event-name " event:" event)
+          ;_ (println "ON-DONE "  (get  node :on-done))
+          event-handler (if (= done-event-name event)
+                          (get node :on-done)
+                          (get-in node [:on (event-type event)]))]
+      (find-valid-handler event-handler guards context event)))
 
 (declare create-transition-state)
 
@@ -485,7 +489,6 @@
      :else #{}))
   ([value]
    (leaf-value-to-ids "" value)))
-
 
 (comment
   )
