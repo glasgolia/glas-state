@@ -67,7 +67,8 @@
       (let [service-creator (:child-service-creator service)
             child-machine (sl/machine-options src {:context data})
             child-callback (fn [event]
-                             (if (= (sl/event-type event) :done/.)
+                             (callback event)
+                             #_(if (= (sl/event-type event) :done/.)
                                (callback {:type (keyword "done.invoke" (str "child." (name id)))
                                           :data (:data event)})
                                (callback event)))
@@ -80,6 +81,13 @@
 
     (fn? src)
     (src data invoke-event)))
+(defn call [call-fn]
+  (fn [data event]
+    (println data)
+    (fn [callback on-event]
+      (future (let [result (call-fn data)]
+         (callback {:type :done/. :data result})))
+      nil)))
 
 (defn- create-invoke-child-id [src]
   (if (map? src)
@@ -93,6 +101,7 @@
               (get-in service [:machine :services src])
               src)
         id (or (:id invoke) (create-invoke-child-id src))
+        _ (assert id (str "invoke service need's an id: " invoke))
         ;_
         ;_ (assert (fn? src) "Invoke src must be a function")
         data (:data invoke)
@@ -100,7 +109,12 @@
                (data context action)
                data)
         invoke-fn (create-invoke-child-fn service id src data action)
-        callback (fn [event] (dispatch service event))
+        callback (fn [event]
+                   (if (= (sl/event-type event) :done/. )
+                     (let [new-event {:type (keyword "done.invoke" (str "child." (name id)))
+                                      :data (:data event)}]
+                       (dispatch service new-event))
+                    (dispatch service event)))
         listener-atom (atom (fn [e] nil))
         on-event (fn [listener] (reset! listener-atom listener))
         cleanup-fn (invoke-fn callback on-event)

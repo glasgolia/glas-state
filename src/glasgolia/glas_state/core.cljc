@@ -27,6 +27,7 @@
 (def dispatch i/dispatch)
 (def add-value-reaction i/add-value-reaction)
 (def add-context-reaction i/add-context-reaction)
+(def call i/call)
 
 
 ; Access state...
