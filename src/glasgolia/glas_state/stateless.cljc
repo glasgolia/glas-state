@@ -50,39 +50,7 @@
     (string? id) (subs id 1)
     (keyword? id) (keyword (namespace id) (subs (name id) 1))))
 
-(defn assign [context-update-fn]
-  "Creates an event that will assign a new context value using the context-update-fn.
-   You should only use this in the machine definition.
-   The context function will be passed: the current context, the event.
-   If the argument is not a function, than the function will be looked up in the
-   machine config actions"
-  {:type     :glas-state/assign-context
-   :assigner context-update-fn})
 
-(defn send-event
-  "Creates an event that will send a new event to the current machine.
-  You should only use this in the machine definition.
-  The function expected an event or function returning an event as first argument, and an optional
-  delay-context map as second argument"
-  ([event delay-context]
-   {:type          :glas-state/send
-    :event         event
-    :delay-context delay-context})
-  ([event]
-   {:type  :glas-state/send
-    :event event}))
-(defn forward
-  "An action that forward the initiating event to the service corresponding to the supplied service-id"
-  [service-id]
-  (send-event (fn [c e] e) {:to service-id}))
-
-(defn send-parent-event
-  "Creates an event that will send a new event to the parent of the current machine.
-  You should only use this in the machine definition.
-  The function expected an event or function returning an event as first argument"
-  [event]
-  {:type  :glas-state/send-parent
-   :event event})
 
 
 (defn create-done-event-type [name]
@@ -91,7 +59,18 @@
       :done/.
       (keyword "done" str-name))
     ))
-
+(defn send-event
+  "Creates an event that will send a new event to the current machine.
+  You should only use this in the machine definition.
+  The function expected an event or function returning an event as first argument, and an optional
+  options map as second argument"
+  ([event options]
+   {:type    :glas-state/send
+    :event   event
+    :options options})
+  ([event]
+   {:type  :glas-state/send
+    :event event}))
 (defn done-event [name]
   (send-event (create-done-event-type name)))
 
@@ -200,17 +179,7 @@
 
 
 
-(defn machine-options
-  "Create a new machine definition by merging the
-  :guards, :actions, :activity-functions :context and :service values
-  in the options map"
-  [machine options]
-  (merge-with into machine {:guards             (:guards options)
-                            :actions            (:actions options)
-                            :activity-functions (:activity-functions options)
-                            :context            (:context options)
-                            :services           (:services options)})
-  )
+
 
 
 (defn start-machine [{:keys [context] :as machine}]
@@ -458,8 +427,10 @@
           (update :actions #(action-array [% (:on-done-events tried-trans)]))
           (dissoc :on-done-events))
       (do
-        (println "The event was not handled..." event)
-        (assoc current-state :actions [])))))
+        #_(println "The event was not handled..." event)
+        (-> current-state
+            (assoc :actions [])
+            (assoc :not-handled true))))))
 
 (defn value-to-ids
   ([parent-id value]
