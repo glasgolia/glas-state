@@ -3,7 +3,7 @@
 
 
 (defn  todo [msg]
-  (ex-message (str "TODO" msg)))
+  (throw (ex-message (str "TODO" msg))))
 
 
 

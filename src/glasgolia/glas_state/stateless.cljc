@@ -53,11 +53,12 @@
 
 
 
-(defn create-done-event-type [name]
+(defn create-done-event-type [name data]
   (let [str-name (state-id-to-str name)]
     (if (empty? str-name)
-      :done/.
-      (keyword "done" str-name))
+      {:type :done/. :data data}
+      {:type (keyword "done" str-name)
+       :data data})
     ))
 (defn send-event
   "Creates an event that will send a new event to the current machine.
@@ -71,8 +72,8 @@
   ([event]
    {:type  :glas-state/send
     :event event}))
-(defn done-event [name]
-  (send-event (create-done-event-type name)))
+(defn done-event [name data]
+  (send-event (create-done-event-type name data)))
 
 (declare final-node?)
 
@@ -130,13 +131,15 @@
     {:actions (action-array [entry (create-invoke-event invoke) (create-activities-event activities)])}
     ))
 
+
+
 (defn create-initial-branch-transition-state [parent-name {:keys [initial states entry invoke activities] :as node}]
   (assert initial (str "Need an initial state for " node))
   (let [child-node (get states initial)
         child-result (create-initial-transition-state (combine-name parent-name initial) child-node)
         child-value (:value child-result)
         child-final? (leaf-final-node? child-node)
-        done-action (when child-final? (done-event parent-name))]
+        done-action (when child-final? (done-event parent-name (:data child-node)))]
     (merge {:value          (if child-value
                               {initial child-value}
                               initial)
@@ -149,14 +152,14 @@
   )
 
 
-(defn create-initial-parallel-transition-state [parent-name {:keys [states entry invoke activities]}]
+(defn create-initial-parallel-transition-state [parent-name {:keys [states entry invoke activities] :as node}]
   (let [child-results (map (fn [[key child-node]]
                              [key (create-initial-transition-state nil child-node)]) states)
         child-values (into {} (map (fn [[k v]]
                                      [k (:value v)]) child-results))
         child-finals (into [] (map (fn [[key value]] (final-node? (get states key) value)) child-values))
         final? (every? true? child-finals)
-        done-action (when final? (done-event parent-name))
+        done-action (when final? (done-event parent-name (:data node)))
         child-actions (action-array (map (fn [[_ v]] (:actions v)) child-results))
         child-done-actions (action-array (map (fn [[_ v]] (:on-done-events v)) child-results))]
     (merge
@@ -237,8 +240,9 @@
 
 (defn- get-event-handler [node-name node guards context event]
   (let [type (event-type event)
+        _ (assert type (str "Could not get event type for event " event))
         event-handler (cond
-                        (= (create-done-event-type node-name) type)
+                        (= (:type (create-done-event-type node-name nil)) type)
                         (get node :on-done)
 
                         (= (namespace type) "done.invoke")
@@ -299,7 +303,7 @@
           (let [new-child-def (get states target)
                 _ (assert new-child-def (str "Can't find child " target " for node " node))
                 new-child-result (create-initial-transition-state (combine-name parent-name target) new-child-def)
-                done-action (when (leaf-final-node? new-child-def) (done-event parent-name))]
+                done-action (when (leaf-final-node? new-child-def) (done-event parent-name (:data new-child-def)))]
             {:actions        (action-array [actions (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
              :value          (create-child-value target (:value new-child-result))
              :on-done-events done-action
@@ -320,7 +324,7 @@
                       new-child-node (get states absolute-target)
                       _ (assert new-child-node (str "Can't find relative child " new-target " for node " node))
                       new-child-result (create-initial-transition-state (combine-name parent-name absolute-target) new-child-node)
-                      done-action (when (leaf-final-node? new-child-node) (done-event parent-name))]
+                      done-action (when (leaf-final-node? new-child-node) (done-event parent-name (:data new-child-node)))]
                   {:actions (action-array [actions (:actions event-handler) (:actions new-child-result) on-done-events (:on-done-events new-child-result)])
                    :value   (create-child-value absolute-target (:value new-child-result))
                    :handled true})
@@ -364,7 +368,7 @@
 
         child-finals (into [] (map (fn [[key value]] (final-node? (get child-node key) value)) child-values))
         final? (every? true? child-finals)
-        done-action (when final? (done-event parent-name))
+        done-action (when final? (done-event parent-name (:data node)))
         handled? (some true? (map (fn [v] (:handled v)) (vals child-results)))]
     (if handled?
       (let []

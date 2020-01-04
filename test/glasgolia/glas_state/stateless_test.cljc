@@ -63,23 +63,7 @@
               }
              (create-initial-transition-state "" state-def))))))
 
-(deftest create-machine-test
-  (testing "Create Machine"
-    (let [
-          m-def {:initial :a
-                 :context {:init-context "test"}
-                 :states  {:a {}
-                           :b {}}}
-          options {:guards {:g-a :guard-a-value}}
-          expected {:initial    :a
-                    :context    {:init-context "test"}
-                    :states     {:a {}
-                                 :b {}}
-                    :guards     (:guards options)
-                    :actions    nil
-                    :activity-functions nil
-                    :services   nil}]
-      (is (= expected (machine-options m-def options))))))
+
 (deftest start-machine-test
   (testing "minimal machine"
     (let [machine-def {:initial :start
@@ -178,18 +162,7 @@
           ])))
 
 
-;(defn on-off-switch [initial switch-event]
-;  {:initial initial
-;   {:states {:off {:on {switch-event :on}}
-;             :on  {:on {switch-event :off}}}}})
-;(defn bold-on-off-switch (on-off-switch  :off :bold-switch))
-;(defn underline-on-off-switch (on-off-switch :off :underline-switch))
 
-;(def color-def {:initial :color-black
-;                {:states {:color-black {:on {:color-switch :color-red}}
-;                          :color-red   {:on {:color-switch :color-green}}
-;                          :color-green {:on {:color-switch :color-black}}}}})
-;
 
 
 
@@ -265,27 +238,7 @@
         state (transition-machine machine state :go-to-b)
         _ (validate {:value :b :actions [:exit-c :test]} state)
         ]))
-;(def example-cmp-machine
-;  {:id      :examples-component
-;   :initial :please-select-example
-;   :states
-;            {:please-select-example {:on
-;                                     {:select-example
-;                                      {:target  :show-example
-;                                       :actions (assign (fn [c e m]
-;                                                         (println "......." e)
-;                                                         (assoc c :selected (:example-id e))))}}}
-;             :show-example {}}
-;   :context {:list  []
-;             :selected nil}})
-;
-;(deftest ^:test-refresh/focus on-with-actions-test
-;  (let[state (start-machine example-cmp-machine)
-;       _  (validate {:value :please-select-example :context {:list[] :selected nil}} state)
-;       state (transition-machine example-cmp-machine state {:type :select-example :example-id :the-selected-id})
-;       _  (validate {:value :show-example :context {:list[] :selected :the-selected-id}} state)
-;
-;       ]))
+
 
 (deftest ^:test-refresh/focus_not invoke-test)
 
@@ -347,90 +300,61 @@
     )
   )
 
-#_(deftest ^:test-refresh/focus-not invoke-test2
-  (let [the-machine
-        {:initial :a
-         :states  {:a    {:invoke {:id :invoke-in-a}
-                          :on     {:next :b}}
-                   :b    {:initial :b1
-                          :on      {:next :c}
-                          :invoke  {:id :invoke-in-b}
-                          :states  {:b1 {:invoke {:id :invoke-in-b1}
-                                         }}}
-                   :c    {:type   :parallel
-                          :states {:c1 {:invoke {:id :invoke-in-c1}}
-                                   :c2 {:invoke {:id :invoke-in-c2}}}}
-                   :done {:type :final}}}
-        state (start-machine the-machine)
-        _ (validate {:value :a :actions [{:type :glas-state/invoke :config {:id :invoke-in-a}}] :context nil} state)
-        state (transition-machine the-machine state :next)
-        _ (validate {:value {:b :b1} :actions [{:type :glas-state/invoke-cleanup :id :invoke-in-a}
-                                               {:type :glas-state/invoke :config {:id :invoke-in-b1}}
-                                               {:type :glas-state/invoke :config {:id :invoke-in-b}}] :context nil} state)
-        state (transition-machine the-machine state :next)
-        _ (validate {:value {:c {:c1 nil
-                                 :c2 nil}} :actions [{:type :glas-state/invoke-cleanup :id :invoke-in-b1}
-                                                     {:type :glas-state/invoke-cleanup :id :invoke-in-b}
-                                                     {:type :glas-state/invoke :config {:id :invoke-in-c1}}
-                                                     {:type :glas-state/invoke :config {:id :invoke-in-c2}}] :context nil} state)
-        ]
-    )
-  )
-(deftest ^:test-refresh/focus-not done-events-tests
-  (let [the-machine {:initial :a
-                     :id :test
-                     :states {:a {:type :parallel
-                                  :states {:par1 {:initial :par11
-                                                  :states {:par11 {:on {:switch :par12}}
-                                                           :par12 {:type :final}}}
-                                           :par2 {:type :final}}}}}
-        state (start-machine the-machine)
-        _ (validate {:value {:a {:par1 :par11 :par2 nil}} :context nil} state)
-        state (transition-machine the-machine state :switch)
-        _ (validate {:value {:a {:par1 :par12 :par2 nil}} :actions [(done-event ".a")] :context nil} state)
-        the-machine {:id :shopping
-                     :type :parallel
-                     :states {:user {:initial :pending
-                                     :states {:pending {:on {:resolve-user :success
-                                                             :reject-user :failure}}
-                                              :success {:type :final}
-                                              :failure {}
-                                              }}
-                              :items {:initial :pending
-                                      :states {:pending {:on {:resolve-items :success
-                                                              :reject-items :failure}}
-                                               :success {:type :final}
-                                               :failure {}}}}
-                     :on-done {:actions (assign (fn [c e] assoc c :done true))
-                               }}
-        state (start-machine the-machine)
-        _ (validate {:value {:user :pending :items :pending} :context nil} state)
-        state (transition-machine the-machine state :resolve-user)
-        _ (validate {:value {:user :success :items :pending} :context nil} state)
-        state (transition-machine the-machine state :resolve-items)
-        _ (validate {:value {:user :success :items :success} :actions [(done-event "")] :context nil} state)
-        the-machine {:id :test
-                     :initial :state-a
-                     :on-done {:actions :root-done}
-                     :states {
-                              :state-a {:initial :state-aa
-                                        :on {:go-b :state-b}
-                                        :on-done {:actions :a-done}
-                                        :states {:state-aa {:initial :state-aaa
-                                                            :on {:go-bb :state-bb}
-                                                            :on-done {:actions :aa-done}
-                                                            :states {:state-aaa {:on {:go-bbb :state-bbb}}
-                                                                     :state-bbb {:type :final}}}
-                                                 :state-bb {:type :final}}}
-                              :state-b {:type :final} }
-                     }
-        state (start-machine the-machine)
-        _ (validate {:value {:state-a {:state-aa :state-aaa}}} state)
-        state (transition-machine the-machine state :go-bbb)
-        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [(done-event ".state-a.state-aa")]} state)
-        state (transition-machine the-machine state :done/.state-a.state-aa)
-        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [:aa-done]} state)
-        ]))
+;(deftest ^:test-refresh/focus-not done-events-tests
+;  (let [the-machine {:initial :a
+;                     :id :test
+;                     :states {:a {:type :parallel
+;                                  :states {:par1 {:initial :par11
+;                                                  :states {:par11 {:on {:switch :par12}}
+;                                                           :par12 {:type :final}}}
+;                                           :par2 {:type :final}}}}}
+;        state (start-machine the-machine)
+;        _ (validate {:value {:a {:par1 :par11 :par2 nil}} :context nil} state)
+;        state (transition-machine the-machine state :switch)
+;        _ (validate {:value {:a {:par1 :par12 :par2 nil}} :actions [(done-event ".a")] :context nil} state)
+;        the-machine {:id :shopping
+;                     :type :parallel
+;                     :states {:user {:initial :pending
+;                                     :states {:pending {:on {:resolve-user :success
+;                                                             :reject-user :failure}}
+;                                              :success {:type :final}
+;                                              :failure {}
+;                                              }}
+;                              :items {:initial :pending
+;                                      :states {:pending {:on {:resolve-items :success
+;                                                              :reject-items :failure}}
+;                                               :success {:type :final}
+;                                               :failure {}}}}
+;                     :on-done {:actions (assign (fn [c e] assoc c :done true))
+;                               }}
+;        state (start-machine the-machine)
+;        _ (validate {:value {:user :pending :items :pending} :context nil} state)
+;        state (transition-machine the-machine state :resolve-user)
+;        _ (validate {:value {:user :success :items :pending} :context nil} state)
+;        state (transition-machine the-machine state :resolve-items)
+;        _ (validate {:value {:user :success :items :success} :actions [(done-event "")] :context nil} state)
+;        the-machine {:id :test
+;                     :initial :state-a
+;                     :on-done {:actions :root-done}
+;                     :states {
+;                              :state-a {:initial :state-aa
+;                                        :on {:go-b :state-b}
+;                                        :on-done {:actions :a-done}
+;                                        :states {:state-aa {:initial :state-aaa
+;                                                            :on {:go-bb :state-bb}
+;                                                            :on-done {:actions :aa-done}
+;                                                            :states {:state-aaa {:on {:go-bbb :state-bbb}}
+;                                                                     :state-bbb {:type :final}}}
+;                                                 :state-bb {:type :final}}}
+;                              :state-b {:type :final} }
+;                     }
+;        state (start-machine the-machine)
+;        _ (validate {:value {:state-a {:state-aa :state-aaa}}} state)
+;        state (transition-machine the-machine state :go-bbb)
+;        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [(done-event ".state-a.state-aa")]} state)
+;        state (transition-machine the-machine state :done/.state-a.state-aa)
+;        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [:aa-done]} state)
+;        ]))
 (deftest ^:test-refresh/focus-not activitie-test
   (let[
        the-machine {:id :activity-test

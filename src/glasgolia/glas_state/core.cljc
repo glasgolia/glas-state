@@ -37,11 +37,15 @@
     :state           (atom nil)
     :queue           (queue/create-queue)                         ; the event queue
     :cancel-channels (atom {})                              ;delayed events cancel channels
+    :child-services (atom {})
     })
   ([the-machine]
    (create-service the-machine {})))
 
-(defn with-on-done [service on-done-callback]
+(defn with-on-done
+  "Add an on-done event listener.
+  Expects a function taken the on-done event."
+  [service on-done-callback]
   (update service :on-done conj on-done-callback))
 
 (defn with-parent [service parent-callback]
@@ -129,22 +133,28 @@
         new-event (if (fn? new-event) (new-event context org-event) new-event)
         parent-callback (:parent-callback service)]
     (doseq [p parent-callback]
-      (p new-event)
-      context)))
+      (p new-event))
+      context))
 
 (defn- create-invoke-child-fn [service id src data invoke-event]
   (cond
     (map? src)
     (fn [callback on-event]
-      (let [service-creator (:child-service-creator service)
-            child-machine (machine-options src {:context data})
+;      (utils/todo "not working")
+      (let [child-machine (machine-options src {:context data})
             child-callback (fn [event]
                              (callback event)
                              #_(if (= (sl/event-type event) :done/.)
                                  (callback {:type (keyword "done.invoke" (str "child." (name id)))
                                             :data (:data event)})
                                  (callback event)))
-            child-service (service-creator child-machine {:parent-callback child-callback})]
+            child-on-done (fn [event ]
+                            (dispatch service {:type (keyword "done.invoke" (str "child." (name id)))
+                                       :data (:data event)}))
+            child-service (-> (create-service child-machine)
+                              (with-parent child-callback)
+                              (with-on-done child-on-done)
+                              (start))]
         (on-event (fn [event]
                     (dispatch child-service event)))
         (fn []
@@ -158,6 +168,8 @@
   (if (map? src)
     (:id src)                                               ; The src is a map -> must be a machine
     nil))
+
+
 (defn- invoke-child [service context action]
   (let [invoke (:config action)
 
@@ -165,6 +177,7 @@
         src (if (keyword? src)
               (get-in service [:machine :services src])
               src)
+        _ (assert (not (nil? src)) (str "src is nil for  " (:src invoke)) )
         id (or (:id invoke) (create-invoke-child-id src))
         _ (assert id (str "invoke service need's an id: " invoke))
         ;_
@@ -285,7 +298,7 @@
     )
   )
 (defn- execute-all-actions [{:keys [state] :as service} context]
-  (println "executing " (:actions @state))
+  #_ (println "executing " (:actions @state))
   (let [new-context (reduce (fn [context action]
                               (execute-action service action (:event @state) context)) context (:actions @state))]
     (swap! state (fn [s]
@@ -307,7 +320,7 @@
           )))))
 
 (defn- execute-child-event [service event event-data]
-  (utils/todo "CHILD EVENTS")
+  (dispatch-to-child-service service (:to event-data) event)
   )
 
 (defn- normalize-event [event]
@@ -370,12 +383,16 @@
   (:context @state))
 
 (defn service-fn [fun]
+  "Create a child services using a function with arguments [data callback event]
+  where:
+  - data is the service  initial data
+  - callback is the parent callback
+  - event is the new invoked event"
   (fn [data event]
     (fn [callback on-event]
       (on-event (fn [e]
-                  (ca/go (fun e callback))))
+                  (ca/go (fun data callback e))))
       nil)))
-
 
 
 (comment
@@ -393,18 +410,28 @@
                              :stopped {:type :final}}
                    :actions {:idle-exit-action (fn [c e] (println "Action :idle-exit-action"))}})
 
+
+
+
 (def ping-pong-machine
   {:id      :ping-pong
    :initial :idle
    :on      {:stop :.done-with-it}
-   :states  {:idle         {:on {:start-ping-pong :ping}}
+   :invoke  [{:id  :test
+              :src (service-fn (fn [data callback event]
+                                 (println "service event: " event)
+                                 (callback {:type :service-event-done
+                                            :data :hello})
+                                 (println "service callback send")))}]
+   :states  {:idle         {:entry (send-event :test-event {:to :test})
+                            :on    {:start-ping-pong :ping}}
              :ping         {:entry [(log "ping ")
                                     (send-event :pong {:delay 1000})]
                             :on    {:pong :pong}}
              :pong         {:entry [(log "pong")
                                     (send-event :ping {:delay 1000})]
                             :on    {:ping :ping}}
-             :done-with-it {:type :final
+             :done-with-it {:type  :final
                             :entry (log "DONE WITH PING-PONG")}}
    })
 

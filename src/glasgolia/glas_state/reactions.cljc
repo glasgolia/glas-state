@@ -1,5 +1,64 @@
 (ns glasgolia.glas-state.reactions)
 
+
+
+
+(defn create-reactor
+  "Create a new reactor data structure.
+  This data structure keeps track of the previous state
+  en all the added reactors"
+  []
+  {:reactors   (atom [])
+   :prev-state (atom {})})
+
+(defn add-reaction
+  "Add a new reaction to a reactor.
+  The filter can be a function that filters the state,
+  or a vector with a path in a map.
+  The fun parameter is a function that accepts the previous
+  and the new filtered state when the state is changed.
+  The reaction will be called with the current state on
+  adding."
+  [reactor filter fun]
+  (if (vector? filter)
+    (recur reactor (fn [e] (get-in e filter)) fun)
+    (let [r {:filter filter :reaction fun}]
+      (swap! (:reactors reactor) conj r)
+      (let [prev-state (filter @(:prev-state reactor))]
+        (fun prev-state prev-state))
+      r)))
+
+
+
+
+(defn exec-reactions
+  "Execute the reactions to a state change"
+  [{:keys [reactors prev-state]} new-state]
+  (when-not (= @prev-state new-state)
+    (doseq [{:keys [filter reaction]} @reactors]
+      (let [pfs (filter @prev-state)
+            nfs (filter new-state)]
+        (when-not (= pfs nfs)
+          (reaction pfs nfs))))
+    (reset! prev-state new-state)))
+
+(defn create-reaction-transition
+  "Create a statechart transition listener that
+  fires the reactions on state changes"
+  [reactor]
+  (fn [state]
+    (exec-reactions reactor state)))
+
+(comment
+  (def r (create-reactor))
+
+  (react r [:value :test] (fn [old new] (println "old:" old "new" new)))
+
+  (exec-reactions r {:value :init
+                     :context :test })
+  (exec-reactions r {:value {:test :init}})
+  (exec-reactions r {:value {:test :bla}})
+  )
 ;
 ;(defn- notify-reactions [reactions old-value new-value]
 ;  (doseq [[_key reaction] reactions]
