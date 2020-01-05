@@ -41,7 +41,10 @@
     })
   ([the-machine]
    (create-service the-machine {})))
-
+(defn with-logger
+  "Function to print log messages."
+  [service log-fn]
+  (update-in service [:config :logger] log-fn))
 (defn with-on-done
   "Add an on-done event listener.
   Expects a function taken the on-done event."
@@ -170,7 +173,7 @@
     nil))
 
 
-(defn- invoke-child [service context action]
+(defn- invoke-child [service context action event]
   (let [invoke (:config action)
 
         src (:src invoke)
@@ -184,7 +187,7 @@
         ;_ (assert (fn? src) "Invoke src must be a function")
         data (:data invoke)
         data (if (fn? data)
-               (data context action)
+               (data context event)
                data)
         invoke-fn (create-invoke-child-fn service id src data action)
         callback (fn [event]
@@ -256,7 +259,7 @@
     :glas-state/assign-context (execute-assign-action service action event context)
     :glas-state/send (execute-send-action service action event context)
     :glas-state/send-parent (execute-send-parent-action service action event context)
-    :glas-state/invoke (do (invoke-child service context action)
+    :glas-state/invoke (do (invoke-child service context action event)
                            context)
     :glas-state/invoke-cleanup (do (invoke-child-cleanup service context action)
                                    context)
@@ -328,6 +331,12 @@
     {:type event}
     event))
 
+(defn- resolve-invoke-data [event context]
+  (update event :data (fn [d]
+                        (if (fn? d)
+                          (d event context)
+                          d))))
+
 (defn- execute-event [{:keys [state machine on-done on-transition] :as service} event {:keys [delay to] :as event-data}]
   (let [event (normalize-event event)]
     (fn []
@@ -340,8 +349,9 @@
 
         :else
         (if (= :done/. (sl/event-type event))
-          (doseq [on-done-callback on-done]
-            (on-done-callback event))
+          (let [event (resolve-invoke-data event (:context state))]
+            (doseq [on-done-callback on-done]
+             (on-done-callback event)))
           (let [trans-state (sl/transition-machine machine @state event)
                 prev-context (:context @state)
                 new-value (:value trans-state)
@@ -352,9 +362,12 @@
                               (assoc :context new-context)
                               (update :actions concat new-actions)
                               (assoc :event event)
-                              (assoc :changed (or (not= (:value @state) new-value) (not= (:context @state) new-context))))]
+                              (assoc :changed (or (not= (:value @state) new-value) (not= (:context @state) new-context)))
+                              (assoc :handled (if (:not-handled trans-state)
+                                                false
+                                                true)))]
             (reset! state new-state)
-            (when (:not-handled trans-state)
+            #_ (when (:not-handled trans-state)
               (utils/service-log-warn service (str "The event was not handled: " event)))
             (when (get-in service [:config :execute])
               (execute-all-actions service prev-context))

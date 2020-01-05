@@ -38,5 +38,6 @@
   (gs/dispatch service :next)
   (gs/dispatch service :next {:to :child})
   (gs/dispatch service :next {:to :child})
-  (gs/dispatch service :next))
+  (gs/dispatch service :next)
+  nil)
 
