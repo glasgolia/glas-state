@@ -414,7 +414,7 @@
   (fn [data event]
     (println "Service call:"  data)
     (fn [callback on-event]
-      (as/go (fun data callback))
+      (ca/go (fun data callback))
       nil)) )
 
 (defn service-call-return [fun]
@@ -423,8 +423,8 @@
    the return value is send in the :data key of a :done/. event"
   (fn [data  event]
     (fn [callback on-event]
-      (as/go (let [result (fun data)]
-               (callback {:done/. :data result})))
+      (ca/go (let [result (fun data)]
+               (callback {:type :done/. :data result})))
       nil)))
 
 (comment
