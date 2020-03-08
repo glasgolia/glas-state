@@ -407,6 +407,25 @@
                   (ca/go (fun data callback e))))
       nil)))
 
+(defn service-call [fun]
+  "Expects a function taking a data map and a callback-function.
+  The function is directly async called once.
+  It is up to the function to send a :done. event"
+  (fn [data event]
+    (println "Service call:"  data)
+    (fn [callback on-event]
+      (as/go (fun data callback))
+      nil)) )
+
+(defn service-call-return [fun]
+  "Expects a function taking a data map argument.
+   The function is directly async called once and
+   the return value is send in the :data key of a :done/. event"
+  (fn [data  event]
+    (fn [callback on-event]
+      (as/go (let [result (fun data)]
+               (callback {:done/. :data result})))
+      nil)))
 
 (comment
 
