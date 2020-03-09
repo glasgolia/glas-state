@@ -33,11 +33,12 @@
                              :logger      println} config)
     :on-transition   []
     :on-done         []
+    :on-error        []
     :parent-callback []
     :state           (atom nil)
-    :queue           (queue/create-queue)                         ; the event queue
+    :queue           (queue/create-queue)                   ; the event queue
     :cancel-channels (atom {})                              ;delayed events cancel channels
-    :child-services (atom {})
+    :child-services  (atom {})
     })
   ([the-machine]
    (create-service the-machine {})))
@@ -50,6 +51,12 @@
   Expects a function taken the on-done event."
   [service on-done-callback]
   (update service :on-done conj on-done-callback))
+
+(defn with-on-error
+  "Add an on-error event listener.
+  Expects a function taken the on-error event."
+  [service on-error-callback]
+  (update service :on-error conj on-error-callback))
 
 (defn with-parent [service parent-callback]
   (update service :parent-callback conj parent-callback))
@@ -137,26 +144,26 @@
         parent-callback (:parent-callback service)]
     (doseq [p parent-callback]
       (p new-event))
-      context))
+    context))
 
 (defn- create-invoke-child-fn [service id src data invoke-event]
   (cond
     (map? src)
     (fn [callback on-event]
-;      (utils/todo "not working")
+      ;      (utils/todo "not working")
       (let [child-machine (machine-options src {:context data})
             child-callback (fn [event]
-                             (callback event)
-                             #_(if (= (sl/event-type event) :done/.)
-                                 (callback {:type (keyword "done.invoke" (str "child." (name id)))
-                                            :data (:data event)})
-                                 (callback event)))
-            child-on-done (fn [event ]
+                             (callback event))
+            child-on-done (fn [event]
                             (dispatch service {:type (keyword "done.invoke" (str "child." (name id)))
-                                       :data (:data event)}))
+                                               :data (:data event)}))
+            child-on-error (fn [event]
+                             (dispatch service {:type (keyword "error.invoke" (str "child." (name id)))
+                                                :data (:data event)}))
             child-service (-> (create-service child-machine)
                               (with-parent child-callback)
                               (with-on-done child-on-done)
+                              (with-on-error child-on-error)
                               (start))]
         (on-event (fn [event]
                     (dispatch child-service event)))
@@ -180,7 +187,7 @@
         src (if (keyword? src)
               (get-in service [:machine :services src])
               src)
-        _ (assert (not (nil? src)) (str "src is nil for  " (:src invoke)) )
+        _ (assert (not (nil? src)) (str "src is nil for  " (:src invoke)))
         id (or (:id invoke) (create-invoke-child-id src))
         _ (assert id (str "invoke service need's an id: " invoke))
         ;_
@@ -191,11 +198,19 @@
                data)
         invoke-fn (create-invoke-child-fn service id src data action)
         callback (fn [event]
-                   (if (= (sl/event-type event) :done/. )
+                   (cond
+                     (= (sl/event-type event) :done/.)
                      (let [new-event {:type (keyword "done.invoke" (str "child." (name id)))
                                       :data (:data event)}]
                        (dispatch service new-event))
-                     (dispatch service event)))
+
+                     (= (sl/event-type event) :error/.)
+                     (let [new-event {:type (keyword "error.invoke" (str "child." (name id)))
+                                      :data (:data event)}]
+                       (dispatch service new-event))
+                     :else
+                     (dispatch service event))
+                   )
         listener-atom (atom (fn [e] nil))
         on-event (fn [listener] (reset! listener-atom listener))
         cleanup-fn (invoke-fn callback on-event)
@@ -301,7 +316,7 @@
     )
   )
 (defn- execute-all-actions [{:keys [state] :as service} context]
-  #_ (println "executing " (:actions @state))
+  #_(println "executing " (:actions @state))
   (let [new-context (reduce (fn [context action]
                               (execute-action service action (:event @state) context)) context (:actions @state))]
     (swap! state (fn [s]
@@ -337,7 +352,7 @@
                           (d event context)
                           d))))
 
-(defn- execute-event [{:keys [state machine on-done on-transition] :as service} event {:keys [delay to] :as event-data}]
+(defn- execute-event [{:keys [state machine on-done on-error on-transition] :as service} event {:keys [delay to] :as event-data}]
   (let [event (normalize-event event)]
     (fn []
       (cond
@@ -351,29 +366,33 @@
         (if (= :done/. (sl/event-type event))
           (let [event (resolve-invoke-data event (:context state))]
             (doseq [on-done-callback on-done]
-             (on-done-callback event)))
-          (let [trans-state (sl/transition-machine machine @state event)
-                prev-context (:context @state)
-                new-value (:value trans-state)
-                new-context (:value trans-state)
-                new-actions (:actions trans-state)
-                new-state (-> @state
-                              (assoc :value new-value)
-                              (assoc :context new-context)
-                              (update :actions concat new-actions)
-                              (assoc :event event)
-                              (assoc :changed (or (not= (:value @state) new-value) (not= (:context @state) new-context)))
-                              (assoc :handled (if (:not-handled trans-state)
-                                                false
-                                                true)))]
-            (reset! state new-state)
-            #_ (when (:not-handled trans-state)
-              (utils/service-log-warn service (str "The event was not handled: " event)))
-            (when (get-in service [:config :execute])
-              (execute-all-actions service prev-context))
-            (doseq [transition-listener on-transition]
-              (transition-listener @state))
-            ))
+              (on-done-callback event)))
+          (if (= :error/. (sl/event-type event))
+            (let [event (resolve-invoke-data event (:context state))]
+              (doseq [on-error-callback on-error]
+                (on-error-callback event)))
+            (let [trans-state (sl/transition-machine machine @state event)
+                  prev-context (:context @state)
+                  new-value (:value trans-state)
+                  new-context (:value trans-state)
+                  new-actions (:actions trans-state)
+                  new-state (-> @state
+                                (assoc :value new-value)
+                                (assoc :context new-context)
+                                (update :actions concat new-actions)
+                                (assoc :event event)
+                                (assoc :changed (or (not= (:value @state) new-value) (not= (:context @state) new-context)))
+                                (assoc :handled (if (:not-handled trans-state)
+                                                  false
+                                                  true)))]
+              (reset! state new-state)
+              #_(when (:not-handled trans-state)
+                  (utils/service-log-warn service (str "The event was not handled: " event)))
+              (when (get-in service [:config :execute])
+                (execute-all-actions service prev-context))
+              (doseq [transition-listener on-transition]
+                (transition-listener @state))
+              )))
         )
       )))
 
@@ -404,7 +423,10 @@
   (fn [data event]
     (fn [callback on-event]
       (on-event (fn [e]
-                  (ca/go (fun data callback e))))
+                  (ca/go (try
+                           (fun data callback e)
+                           (catch Exception e (callback {:type :error/.
+                                                         :data {:exception e}}))))))
       nil)))
 
 (defn service-call [fun]
@@ -412,69 +434,72 @@
   The function is directly async called once.
   It is up to the function to send a :done. event"
   (fn [data event]
-    (println "Service call:"  data)
     (fn [callback on-event]
-      (ca/go (fun data callback))
-      nil)) )
+      (ca/go (try (fun data callback)
+                  (catch Exception e (callback {:type :error/.
+                                                :data {:exception e}}))))
+      nil)))
 
 (defn service-call-return [fun]
   "Expects a function taking a data map argument.
    The function is directly async called once and
    the return value is send in the :data key of a :done/. event"
-  (fn [data  event]
+  (fn [data event]
     (fn [callback on-event]
-      (ca/go (let [result (fun data)]
-               (callback {:type :done/. :data result})))
+      (ca/go (try (let [result (fun data)]
+                    (callback {:type :done/. :data result}))
+                  (catch Exception e (callback {:type :error/.
+                                                :data {:exception e}}))))
       nil)))
 
 (comment
 
-(def mape-machine {:id      :mape
-                   :initial :idle
-                   :states  {:idle    {:entry [(log "idle entry action")
-                                               (assign {:context-init true})
-                                               (send-parent-event {:type :machine-started})]
-                                       :exit  :idle-exit-action
-                                       :on    {:next :started
-                                               :hello {:actions (log "Hello...")}}}
-                             :started {:entry (assign (fn [c e] (merge c {:context-from-event e})))
-                                       :on    {:stop :stopped}}
-                             :stopped {:type :final}}
-                   :actions {:idle-exit-action (fn [c e] (println "Action :idle-exit-action"))}})
+  (def mape-machine {:id      :mape
+                     :initial :idle
+                     :states  {:idle    {:entry [(log "idle entry action")
+                                                 (assign {:context-init true})
+                                                 (send-parent-event {:type :machine-started})]
+                                         :exit  :idle-exit-action
+                                         :on    {:next  :started
+                                                 :hello {:actions (log "Hello...")}}}
+                               :started {:entry (assign (fn [c e] (merge c {:context-from-event e})))
+                                         :on    {:stop :stopped}}
+                               :stopped {:type :final}}
+                     :actions {:idle-exit-action (fn [c e] (println "Action :idle-exit-action"))}})
 
 
 
 
-(def ping-pong-machine
-  {:id      :ping-pong
-   :initial :idle
-   :on      {:stop :.done-with-it}
-   :invoke  [{:id  :test
-              :src (service-fn (fn [data callback event]
-                                 (println "service event: " event)
-                                 (callback {:type :service-event-done
-                                            :data :hello})
-                                 (println "service callback send")))}]
-   :states  {:idle         {:entry (send-event :test-event {:to :test})
-                            :on    {:start-ping-pong :ping}}
-             :ping         {:entry [(log "ping ")
-                                    (send-event :pong {:delay 1000})]
-                            :on    {:pong :pong}}
-             :pong         {:entry [(log "pong")
-                                    (send-event :ping {:delay 1000})]
-                            :on    {:ping :ping}}
-             :done-with-it {:type  :final
-                            :entry (log "DONE WITH PING-PONG")}}
-   })
+  (def ping-pong-machine
+    {:id      :ping-pong
+     :initial :idle
+     :on      {:stop :.done-with-it}
+     :invoke  [{:id  :test
+                :src (service-fn (fn [data callback event]
+                                   (println "service event: " event)
+                                   (callback {:type :service-event-done
+                                              :data :hello})
+                                   (println "service callback send")))}]
+     :states  {:idle         {:entry (send-event :test-event {:to :test})
+                              :on    {:start-ping-pong :ping}}
+               :ping         {:entry [(log "ping ")
+                                      (send-event :pong {:delay 1000})]
+                              :on    {:pong :pong}}
+               :pong         {:entry [(log "pong")
+                                      (send-event :ping {:delay 1000})]
+                              :on    {:ping :ping}}
+               :done-with-it {:type  :final
+                              :entry (log "DONE WITH PING-PONG")}}
+     })
 
 
   (def s (-> (create-service ping-pong-machine)
              (with-on-transition (fn [state] (println "TRANS" state)))
              (with-on-done (fn [event] (println "GOT ON-DONE" event)))
              (with-parent (fn [event] (println "GOT PARENT EVENT " event)))
-             ) )
+             ))
 
-  #_ (dispatch s :hello)
+  #_(dispatch s :hello)
   (start s)
   (dispatch s :start-ping-pong)
   (dispatch s :stop)
@@ -491,5 +516,43 @@
     (dispatch service :stop)
     (start service)
     (stop service)
+    nil)
+
+  (def on-error-test-machine
+    {:id      :on-error-test
+     :initial :no-error
+     :on {:test-exception :.test-exception}
+     :states  {:no-error      {:invoke {:id      :test
+                                        :src     (service-call (fn [data callback]
+                                                                 (println "in service call" data)
+                                                                 (callback {:type :done/.
+                                                                            :data "this-is-done"})))
+                                        :data    {:hello :peter}
+                                        :on-done {:target  :to-error-test
+                                                  :actions (fn [c e] (println "On-done-action:" e))}}}
+               :to-error-test {:invoke {:id       :error-test
+                                        :data     {:error-call-data :test}
+                                        :src      (service-call (fn [data callback]
+                                                                  (println "in error service call " data)
+                                                                  (callback {:type :error/.
+                                                                             :data "This is an error"})))
+                                        :on-error {
+                                                   :actions (fn [c e] (println "On-Error-action" e))}}}
+               :test-exception {:invoke {:id :exception-test
+                                        :data {:exception-test-call-data :test}
+                                        :src (service-call (fn [data callback]
+                                                             (println "in exception service call " data)
+                                                             (throw (ex-info "This is an exception" {:info :test}))))
+                                        :on-error {:actions (fn [c e] (println "Got exception action" e))}}}}})
+
+  (let [service (-> (create-service on-error-test-machine)
+                    (with-on-transition (fn [state] (println "TRANS" state)))
+                    (with-on-done (fn [event] (println "GOT ON-DONE" event)))
+                    (with-on-error (fn [event] (println "GOT ON-ERROR" event)))
+                    (with-parent (fn [event] (println "GOT PARENT EVENT " event)))
+                    )]
+    (start service)
+    (dispatch service :test-exception)
+    #_(stop service)
     nil)
   )

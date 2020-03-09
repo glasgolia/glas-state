@@ -238,6 +238,17 @@
         (:on-done service))
       (:on-done invoke-services))))
 
+(defn- get-invoke-error-handler [node event-type]
+  (let [invoke-services (:invoke node)]
+    (if (vector? invoke-services)
+      (let [service (first (filter (fn [service]
+                                     (let [id (:id service)
+                                           _ (assert id (str "Need an id for invoke with multiple services in node " node))
+                                           id (keyword "error.invoke" (str "child." (name id)))]
+                                       (= id event-type))) invoke-services))]
+        (:on-error service))
+      (:on-error invoke-services))))
+
 (defn- get-event-handler [node-name node guards context event]
   (let [type (event-type event)
         _ (assert type (str "Could not get event type for event " event))
@@ -247,6 +258,9 @@
 
                         (= (namespace type) "done.invoke")
                         (get-invoke-done-handler node type)
+
+                        (= (namespace type) "error.invoke")
+                        (get-invoke-error-handler node type)
 
                         :else
                         (get-in node [:on type]))]
