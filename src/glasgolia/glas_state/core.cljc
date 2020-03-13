@@ -45,7 +45,7 @@
 (defn with-logger
   "Function to print log messages."
   [service log-fn]
-  (update-in service [:config :logger] log-fn))
+  (assoc-in service [:config :logger] log-fn))
 (defn with-on-done
   "Add an on-done event listener.
   Expects a function taken the on-done event."
@@ -96,6 +96,13 @@
   "An action that forward the initiating event to the service corresponding to the supplied service-id"
   [service-id]
   (send-event (fn [c e] e) {:to service-id}))
+
+(defn spawn
+  ([src options]
+   {:spawn src
+    :options options})
+  ([src]
+   (spawn src {})))
 
 (defn send-parent-event
   "Creates an event that will send a new event to the parent of the current machine.
@@ -398,11 +405,22 @@
 
 
 (defn dispatch
+  "Send an event with possible extra event data to a service"
   ([service event]
    (dispatch service event {}))
   ([service event event-data]
    (queue/service-put service (execute-event service event event-data))
    service))
+
+(defn dispatch-nil
+  "Send an event using dispatch but returns nil.
+  Can be used for testing in the repl."
+  ([service event]
+   (dispatch service event {})
+   nil)
+  ([service event event-data]
+   (dispatch service event event-data)
+   nil))
 
 (defn service-state [{:keys [state] :as _service}]
   "Return the full current state of this service"
