@@ -1,10 +1,10 @@
-(defproject glas-state "0.1.0-alpha"
+(defproject glas-state "0.1.1-alpha"
   :description "Statecharts for clojure and clojurescript, with an xstate-like api."
   :url "https://github.com/glasgolia/glas-state"
   :license {:name "MIT"}
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.clojure/clojurescript "1.10.597"]
-                 [org.clojure/core.async "0.4.500"]]
+                 [org.clojure/core.async "1.0.567"]]
   :repl-options {:init-ns glasgolia.glas-state.core}
   :plugins [[lein-cljsbuild "1.1.7"]]
 

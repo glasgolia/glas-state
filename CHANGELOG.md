@@ -3,8 +3,10 @@ All notable changes to this project will be documented in this file. This change
 
 ## [Unreleased]
 ### Changed
+## [0.1.1-alpha]
+Complete refactoring.
 
-## [0.1.1] - 2019-09-25
+## [0.1.0] - 2019-09-25
 ### Changed
 
 ### Removed
