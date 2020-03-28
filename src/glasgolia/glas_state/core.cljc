@@ -25,12 +25,14 @@
   :execute (default true): true if actions should be executed on transition.
   :deferEvents (default true): true if you want to defer send events until the start function is called.
   If false, an error will be thrown.
-  :logger(default println) The logger used for log(...) actions"
+  :logger(default println) The logger used for log(...) actions
+  :user-data Extra user data linked to this service"
   ([the-machine config]
    {:machine         the-machine
     :config          (merge {:deferEvents true
                              :execute     true
-                             :logger      println} config)
+                             :logger      println} (dissoc config :user-data))
+    :user-data       (:user-data config)
     :on-transition   []
     :on-done         []
     :on-error        []
@@ -42,6 +44,14 @@
     })
   ([the-machine]
    (create-service the-machine {})))
+
+
+(defn machine [service]
+  (:machine service))
+
+(defn user-data [service]
+  "Get the user-data out of a service."
+  (:user-data service))
 (defn with-logger
   "Function to print log messages."
   [service log-fn]
@@ -62,6 +72,14 @@
   (update service :parent-callback conj parent-callback))
 
 (defn with-on-transition [service on-trans-fn]
+  "Add a function that will be called on every state-machine transition/event.
+  The function will receive an event map with:
+  :value - the value of the state-machine
+  :actions - list of actions
+  :context - the  context of the machine
+  :event - the last event
+  :changed - if the state changed
+  :handled - if the event was handled"
   (update service :on-transition conj on-trans-fn))
 
 (defn execute [service]
@@ -99,7 +117,7 @@
 
 (defn spawn
   ([src options]
-   {:spawn src
+   {:spawn   src
     :options options})
   ([src]
    (spawn src {})))
@@ -539,29 +557,29 @@
   (def on-error-test-machine
     {:id      :on-error-test
      :initial :no-error
-     :on {:test-exception :.test-exception}
-     :states  {:no-error      {:invoke {:id      :test
-                                        :src     (service-call (fn [data callback]
-                                                                 (println "in service call" data)
-                                                                 (callback {:type :done/.
-                                                                            :data "this-is-done"})))
-                                        :data    {:hello :peter}
-                                        :on-done {:target  :to-error-test
-                                                  :actions (fn [c e] (println "On-done-action:" e))}}}
-               :to-error-test {:invoke {:id       :error-test
-                                        :data     {:error-call-data :test}
-                                        :src      (service-call (fn [data callback]
-                                                                  (println "in error service call " data)
-                                                                  (callback {:type :error/.
-                                                                             :data "This is an error"})))
-                                        :on-error {
-                                                   :actions (fn [c e] (println "On-Error-action" e))}}}
-               :test-exception {:invoke {:id :exception-test
-                                        :data {:exception-test-call-data :test}
-                                        :src (service-call (fn [data callback]
-                                                             (println "in exception service call " data)
-                                                             (throw (ex-info "This is an exception" {:info :test}))))
-                                        :on-error {:actions (fn [c e] (println "Got exception action" e))}}}}})
+     :on      {:test-exception :.test-exception}
+     :states  {:no-error       {:invoke {:id      :test
+                                         :src     (service-call (fn [data callback]
+                                                                  (println "in service call" data)
+                                                                  (callback {:type :done/.
+                                                                             :data "this-is-done"})))
+                                         :data    {:hello :peter}
+                                         :on-done {:target  :to-error-test
+                                                   :actions (fn [c e] (println "On-done-action:" e))}}}
+               :to-error-test  {:invoke {:id       :error-test
+                                         :data     {:error-call-data :test}
+                                         :src      (service-call (fn [data callback]
+                                                                   (println "in error service call " data)
+                                                                   (callback {:type :error/.
+                                                                              :data "This is an error"})))
+                                         :on-error {
+                                                    :actions (fn [c e] (println "On-Error-action" e))}}}
+               :test-exception {:invoke {:id       :exception-test
+                                         :data     {:exception-test-call-data :test}
+                                         :src      (service-call (fn [data callback]
+                                                                   (println "in exception service call " data)
+                                                                   (throw (ex-info "This is an exception" {:info :test}))))
+                                         :on-error {:actions (fn [c e] (println "Got exception action" e))}}}}})
 
   (let [service (-> (create-service on-error-test-machine)
                     (with-on-transition (fn [state] (println "TRANS" state)))
