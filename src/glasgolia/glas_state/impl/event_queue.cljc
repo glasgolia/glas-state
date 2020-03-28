@@ -1,40 +1,27 @@
 (ns glasgolia.glas-state.impl.event-queue
-  (:require [clojure.core.async :as ca]))
+  (:require [glasgolia.glas-state.impl.function-queue :as fc]))
 
-
+(def global-queue (fc/create-function-queue))
 
 (defn  create-queue []
-  (let [s (ca/chan 1)
-        first (ca/chan 1)]
-    (ca/>!! s first)
-    {:q (atom first)
-     :s s}))
+  {:started? (atom false)})
 
-(defn service-put [{:keys [queue config state] :as _service} fun]
-  (let [s (:s queue)
-        prev-chan (ca/<!! s)
-        next-chan (ca/chan 1)]
-    (ca/go
-      (if (ca/<! prev-chan)
-        (do
-          (if (or (:deferEvents config) @state)
-            (fun)
-            (ex-message "start is not called on service before event"))
-          (ca/>! next-chan true))
-        (ca/close! next-chan))
-      )
-    (ca/>!! s next-chan)))
+(defn service-put [{:keys [queue config state] :as service} fun]
+  (let [service-function (fn[]
+                           (try
+                             (if (or (:deferEvents config) @(:started? queue))
+                              (fun)
+                              (throw (ex-info "Dispatch event before start is called" {:service service})))
+                             (catch #?(:clj Exception
+                                       :cljs :default ) e
+                               (println e))))]
+    (global-queue service-function)))
 
 
 (defn  start-queue [{:keys [queue] :as _service}]
-  (ca/>!! @(:q queue) true))
+  (reset! (:started? queue) true))
 
 
 (defn stop-queue [{:keys [queue] :as _service}]
-  (let [s (:s queue)
-         prev-chan (ca/<!! s)
-         next-chan (ca/chan 1)]
-    (ca/close! prev-chan)
-    (reset! (:q queue) next-chan)
-    (ca/>!! s next-chan )))
+  (reset! (:started? queue) false))
 

@@ -1,7 +1,8 @@
 (ns glasgolia.glas-state.core
   (:require [glasgolia.glas-state.stateless :as sl]
             [glasgolia.glas-state.impl.event-queue :as queue]
-            [clojure.core.async :as ca]
+            [#?(:clj  clojure.core.async
+                :cljs cljs.core.async) :as ca]
             [glasgolia.glas-state.impl.utils :as utils]))
 
 
@@ -461,7 +462,8 @@
       (on-event (fn [e]
                   (ca/go (try
                            (fun data callback e)
-                           (catch Exception e (callback {:type :error/.
+                           (catch #?(:clj  Exception
+                                     :cljs :default) e (callback {:type :error/.
                                                          :data {:exception e}}))))))
       nil)))
 
@@ -472,7 +474,8 @@
   (fn [data event]
     (fn [callback on-event]
       (ca/go (try (fun data callback)
-                  (catch Exception e (callback {:type :error/.
+                  (catch #?(:clj  Exception
+                            :cljs :default) e (callback {:type :error/.
                                                 :data {:exception e}}))))
       nil)))
 
@@ -484,7 +487,8 @@
     (fn [callback on-event]
       (ca/go (try (let [result (fun data)]
                     (callback {:type :done/. :data result}))
-                  (catch Exception e (callback {:type :error/.
+                  (catch #?(:clj  Exception
+                            :cljs :default) e (callback {:type :error/.
                                                 :data {:exception e}}))))
       nil)))
 
