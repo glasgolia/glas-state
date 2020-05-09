@@ -1,43 +1,44 @@
 (ns glasgolia.glas-state.stateless-test
-  (:require [clojure.test :refer :all]
-            [glasgolia.glas-state.stateless :refer :all]))
+  (:require [#?(:clj clojure.test
+                :cljs cljs.test) :as t]
+            [glasgolia.glas-state.stateless :as sl]))
 
 (defmacro validate [{exp-value   :value
                      exp-actions :actions
                      exp-context :context}
                     state]
   `(do
-     (is (= ~exp-value (:value ~state)) "Values are not equal")
-     (is (= (into #{} ~exp-actions) (into #{} (:actions ~state))) "Actions are not equal")
-     (is (= ~exp-context (:context ~state)) "Context are not equal")
+     (t/is (= ~exp-value (:value ~state)) "Values are not equal")
+     (t/is (= (into #{} ~exp-actions) (into #{} (:actions ~state))) "Actions are not equal")
+     (t/is (= ~exp-context (:context ~state)) "Context are not equal")
      nil))
 
-(deftest event-type-tests
-  (testing "event-type handling"
-    (is (= :kw/test (event-type :kw/test)))
-    (is (= :blabla (event-type [:blabla :extra])))
-    (is (= :the-type (event-type {:type :the-type :a :b})))
-    (is (= "Peter" (event-type "Peter")))
-    (is (= 1234 (event-type 1234)))
-    (is (= "true" (event-type true)))
+(t/deftest event-type-tests
+  (t/testing "event-type handling"
+    (t/is (= :kw/test (sl/event-type :kw/test)))
+    (t/is (= :blabla (sl/event-type [:blabla :extra])))
+    (t/is (= :the-type (sl/event-type {:type :the-type :a :b})))
+    (t/is (= "Peter" (sl/event-type "Peter")))
+    (t/is (= 1234 (sl/event-type 1234)))
+    (t/is (= "true" (sl/event-type true)))
     ))
 
 
-(deftest create-initial-transition-state-tests
-  (testing "Initial for leaf state"
+(t/deftest create-initial-transition-state-tests
+  (t/testing "Initial for leaf state"
     (let [state-def {:entry :lets-enter
                      :on    [:on-first :on-second]}]
-      (is (= {:actions [:lets-enter]}
-             (create-initial-transition-state "" state-def)))))
+      (t/is (= {:actions [:lets-enter]}
+             (sl/create-initial-transition-state "" state-def)))))
 
-  (testing "Initial for branch state"
+  (t/testing "Initial for branch state"
     (let [state-def {:initial :state-2
                      :states  {:state-1 {}
                                :state-2 {:entry [:a :b [:c]]
                                          :on    [:on-state2]}}}]
-      (is (= {:value :state-2 :actions [:a :b :c] :on-done-events []}
-             (create-initial-transition-state "" state-def)))))
-  (testing "Initial for hierarchy state"
+      (t/is (= {:value :state-2 :actions [:a :b :c] :on-done-events []}
+             (sl/create-initial-transition-state "" state-def)))))
+  (t/testing "Initial for hierarchy state"
     (let [state-def {:initial :state-2
                      :states  {:state-1 {}
                                :state-2 {:initial :state-2-2
@@ -46,9 +47,9 @@
                                          :states  {:state-2-1 {}
                                                    :state-2-2 {:entry :entry-state-2-2}
                                                    }}}}]
-      (is (= {:value {:state-2 :state-2-2} :actions [:entry-state-2 :entry-state-2-2] :on-done-events []}
-             (create-initial-transition-state "" state-def)))))
-  (testing "Initial for Parallel state"
+      (t/is (= {:value {:state-2 :state-2-2} :actions [:entry-state-2 :entry-state-2-2] :on-done-events []}
+             (sl/create-initial-transition-state "" state-def)))))
+  (t/testing "Initial for Parallel state"
     (let [state-def {:type   :parallel
                      :states {:bold      {:initial :off
                                           :states  {:on  {:entry [:entry-bold-on]}
@@ -57,35 +58,35 @@
                                           :states  {:on  {:entry :entry-underline-on
                                                           }
                                                     :off {:entry :entry-underline-off}}}}}]
-      (is (= {:value          {:bold :off :underline :on}
+      (t/is (= {:value          {:bold :off :underline :on}
               :actions        [:entry-underline-on]
               :on-done-events []
               }
-             (create-initial-transition-state "" state-def))))))
+             (sl/create-initial-transition-state "" state-def))))))
 
 
-(deftest start-machine-test
-  (testing "minimal machine"
+(t/deftest start-machine-test
+  (t/testing "minimal machine"
     (let [machine-def {:initial :start
                        :context {:name "Peter"}
                        :states  {:start {:entry :on-entry-start}
                                  :stop  {}}}]
-      (is (= {:value   :start
+      (t/is (= {:value   :start
               :actions [:on-entry-start]
               :context {:name "Peter"}
               }
-             (start-machine machine-def))))))
+             (sl/start-machine machine-def))))))
 
 
 
-(deftest find-valid-handler-test
-  (testing "event handlers handling"
+(t/deftest find-valid-handler-test
+  (t/testing "event handlers handling"
     (let []
-      (is (= {:target :new-target} (find-valid-handler :new-target {} {} :event)))
-      (is (nil? (find-valid-handler nil {} {} :event)))
-      (is (= {:target :new-target} (find-valid-handler [:new-target] {} {} :event)))
-      (is (= {:target :second :cond :check-second}
-             (find-valid-handler
+      (t/is (= {:target :new-target} (sl/find-valid-handler :new-target {} {} :event)))
+      (t/is (nil? (sl/find-valid-handler nil {} {} :event)))
+      (t/is (= {:target :new-target} (sl/find-valid-handler [:new-target] {} {} :event)))
+      (t/is (= {:target :second :cond :check-second}
+             (sl/find-valid-handler
                [{:target :first :cond :check-first}
                 {:target :second :cond :check-second}]
                {:check-first  (fn [context event] (= {} context))
@@ -134,30 +135,30 @@
                                                :exit  :p2-off-exit
                                                :on    {:switch :on}}}}}}}})
 
-(deftest transition-machine-test
-  (testing "Transition tests"
-    (let [state (start-machine test-machine-1)
-          state (transition-machine test-machine-1 state :switch)
+(t/deftest transition-machine-test
+  (t/testing "Transition tests"
+    (let [state (sl/start-machine test-machine-1)
+          state (sl/transition-machine test-machine-1 state :switch)
           _ (validate {:value   :b
                        :actions [:exit-a :enter-b]}
                       state)
-          state (transition-machine test-machine-1 state :switch)
+          state (sl/transition-machine test-machine-1 state :switch)
           _ (validate {:value {:c :c-1} :actions [:exit-b :enter-c :entry-c1]} state)
-          state (transition-machine test-machine-1 state :switch)
+          state (sl/transition-machine test-machine-1 state :switch)
           _ (validate {:value {:c :c-2} :actions [:exit-c1 :entry-c2]} state)
-          state (transition-machine test-machine-1 state :switch)
+          state (sl/transition-machine test-machine-1 state :switch)
           _ (validate {:value :a :actions [:exit-c2 :exit-c :enter-a]} state)
-          state (transition-machine test-machine-1 state :to-d)
+          state (sl/transition-machine test-machine-1 state :to-d)
           _ (validate {:value   {:d {:p1 :on
                                      :p2 :off}}
                        :actions [:exit-a :entry-d :entry-p1 :entry-p2 :p2-off-entry]} state)
-          state (transition-machine test-machine-1 state :switch)
+          state (sl/transition-machine test-machine-1 state :switch)
           _ (validate {:value   {:d {:p1 :off
                                      :p2 :on}}
                        :actions [:p2-off-exit :p2-on-entry]} state)
-          state (transition-machine test-machine-1 state :to-c)
+          state (sl/transition-machine test-machine-1 state :to-c)
           _ (validate {:value {:c :c-1} :actions [:p2-on-exit :exit-p1 :exit-p2 :exit-d :enter-c :entry-c1]} state)
-          state (transition-machine test-machine-1 state :non-existing-event)
+          state (sl/transition-machine test-machine-1 state :non-existing-event)
           _ (validate {:value {:c :c-1} :actions []} state)
           ])))
 
@@ -166,9 +167,9 @@
 
 
 
-(deftest ^:test-refresh/focus_not  on-done-init-test
-  (testing "Testing on-done initial states"
-    (let [state (start-machine
+(t/deftest ^:test-refresh/focus_not  on-done-init-test
+  (t/testing "Testing on-done initial states"
+    (let [state (sl/start-machine
                   {:initial :a
                    :states  {:a {:initial :a1
                                  :states  {:a1 {:initial :a12
@@ -177,44 +178,46 @@
                                            :a2 {}}}
                              :b {}
                              }})]
-      (is (= {:value   {:a {:a1 :a12}}
+      (t/is (= {:value   {:a {:a1 :a12}}
               :actions [{:type  :glas-state/send
-                         :event :done/.a.a1}]
+                         :event {:type :done/.a.a1 :data nil}}]
               :context nil} state)))
-    (let [state (start-machine
+    (let [state (sl/start-machine
 
                   {:initial :a
                    :states  {:a {:type :final}
                              :b {}
                              }})]
-      (is (= {:value   :a
-              :actions [{:type :glas-state/send
-                         :event :done/.}]
+      (t/is (= {:value   :a
+              :actions [{:type  :glas-state/send
+                         :event {:type :done/.
+                                 :data nil}}
+                        ]
               :context nil} state)))
-    (let [state (start-machine
+    (let [state (sl/start-machine
                   {:initial :a
                    :states  {:a {:initial :p
                                  :states  {:p {:type   :parallel
                                                :states {:p1 {}
                                                         :p2 {:type :final}
                                                         }}}}}})]
-      (is (= {:value   {:a {:p {:p1 nil :p2 nil}}}
+      (t/is (= {:value   {:a {:p {:p1 nil :p2 nil}}}
               :actions [] :context nil} state))
       )
-    (let [state (start-machine
+    (let [state (sl/start-machine
                   {:initial :a
                    :states  {:a {:initial :p
                                  :states  {:p {:type   :parallel
                                                :states {:p1 {:type :final}
                                                         :p2 {:type :final}
                                                         }}}}}})]
-      (is (= {:value   {:a {:p {:p1 nil :p2 nil}}}
-              :actions [(done-event ".a.p")] :context nil} state))
+      (t/is (= {:value   {:a {:p {:p1 nil :p2 nil}}}
+              :actions [(sl/done-event ".a.p" nil)] :context nil} state))
       )
     )
   )
 
-(deftest ^:test-refresh/focus-not relative-target-test
+(t/deftest ^:test-refresh/focus-not relative-target-test
   (let [machine
         {:initial :c
          :on      {:go-to-b {:target  :.b
@@ -231,27 +234,27 @@
                                  :c2 {}}}
                    }
          }
-        state (start-machine machine)
+        state (sl/start-machine machine)
         _ (validate {:value {:c :c1} :actions [:entry-c1 :entry-c]} state)
-        state (transition-machine machine state :c2)
+        state (sl/transition-machine machine state :c2)
         _ (validate {:value {:c :c2} :actions [:exit-c1 :goto-c2-action]} state)
-        state (transition-machine machine state :go-to-b)
+        state (sl/transition-machine machine state :go-to-b)
         _ (validate {:value :b :actions [:exit-c :test]} state)
         ]))
 
 
-(deftest ^:test-refresh/focus_not invoke-test)
+(t/deftest ^:test-refresh/focus_not invoke-test)
 
-(deftest ^:test-refresh/focus_not on-done-transition-test
+(t/deftest ^:test-refresh/focus_not on-done-transition-test
   (let [the-machine
         {:initial :a
          :states  {:a {:on {:switch :b}}
                    :b {:type :final}}}
-        state (start-machine the-machine)
+        state (sl/start-machine the-machine)
         _ (validate {:value :a :actions [] :context nil} state)
-        state (transition-machine the-machine state :switch)
+        state (sl/transition-machine the-machine state :switch)
         _ (validate {:value   :b
-                     :actions [(done-event "")]} state)
+                     :actions [(sl/done-event "" nil)]} state)
         ]
     )
   (let [the-machine
@@ -261,11 +264,11 @@
                                  :a2 {:type :final}}
                        :b       {:type :final}}}
          }
-        state (start-machine the-machine)
+        state (sl/start-machine the-machine)
         _ (validate {:value {:a :a1} :actions [] :context nil} state)
-        state (transition-machine the-machine state :switch)
+        state (sl/transition-machine the-machine state :switch)
         _ (validate {:value   {:a :a2}
-                     :actions [(done-event ".a")]} state)
+                     :actions [(sl/done-event ".a" nil)]} state)
         ]
     )
   (let [the-machine
@@ -290,12 +293,12 @@
                                                                             :color-finish :color-done}}
                                                           :color-done {:type :final}}}}}}}}
          }
-        state (start-machine the-machine)
+        state (sl/start-machine the-machine)
         _ (validate {:value {:a {:p {:bold :off :color :black}}} :actions [] :context nil} state)
-        state (transition-machine the-machine state :bold-finish)
+        state (sl/transition-machine the-machine state :bold-finish)
         _ (validate {:value {:a {:p {:bold :bold-done :color :black}}} :actions []} state)
-        state (transition-machine the-machine state :color-finish)
-        _ (validate {:value {:a {:p {:bold :bold-done :color :color-done}}} :actions [(done-event ".a.p")]} state)
+        state (sl/transition-machine the-machine state :color-finish)
+        _ (validate {:value {:a {:p {:bold :bold-done :color :color-done}}} :actions [(sl/done-event ".a.p" nil)]} state)
         ]
     )
   )
@@ -308,10 +311,10 @@
 ;                                                  :states {:par11 {:on {:switch :par12}}
 ;                                                           :par12 {:type :final}}}
 ;                                           :par2 {:type :final}}}}}
-;        state (start-machine the-machine)
+;        state (sl/start-machine the-machine)
 ;        _ (validate {:value {:a {:par1 :par11 :par2 nil}} :context nil} state)
-;        state (transition-machine the-machine state :switch)
-;        _ (validate {:value {:a {:par1 :par12 :par2 nil}} :actions [(done-event ".a")] :context nil} state)
+;        state (sl/transition-machine the-machine state :switch)
+;        _ (validate {:value {:a {:par1 :par12 :par2 nil}} :actions [(sl/done-event ".a")] :context nil} state)
 ;        the-machine {:id :shopping
 ;                     :type :parallel
 ;                     :states {:user {:initial :pending
@@ -327,12 +330,12 @@
 ;                                               :failure {}}}}
 ;                     :on-done {:actions (assign (fn [c e] assoc c :done true))
 ;                               }}
-;        state (start-machine the-machine)
+;        state (sl/start-machine the-machine)
 ;        _ (validate {:value {:user :pending :items :pending} :context nil} state)
-;        state (transition-machine the-machine state :resolve-user)
+;        state (sl/transition-machine the-machine state :resolve-user)
 ;        _ (validate {:value {:user :success :items :pending} :context nil} state)
-;        state (transition-machine the-machine state :resolve-items)
-;        _ (validate {:value {:user :success :items :success} :actions [(done-event "")] :context nil} state)
+;        state (sl/transition-machine the-machine state :resolve-items)
+;        _ (validate {:value {:user :success :items :success} :actions [(sl/done-event "")] :context nil} state)
 ;        the-machine {:id :test
 ;                     :initial :state-a
 ;                     :on-done {:actions :root-done}
@@ -348,14 +351,14 @@
 ;                                                 :state-bb {:type :final}}}
 ;                              :state-b {:type :final} }
 ;                     }
-;        state (start-machine the-machine)
+;        state (sl/start-machine the-machine)
 ;        _ (validate {:value {:state-a {:state-aa :state-aaa}}} state)
-;        state (transition-machine the-machine state :go-bbb)
-;        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [(done-event ".state-a.state-aa")]} state)
-;        state (transition-machine the-machine state :done/.state-a.state-aa)
+;        state (sl/transition-machine the-machine state :go-bbb)
+;        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [(sl/done-event ".state-a.state-aa")]} state)
+;        state (sl/transition-machine the-machine state :done/.state-a.state-aa)
 ;        _ (validate {:value {:state-a {:state-aa :state-bbb}} :actions [:aa-done]} state)
 ;        ]))
-(deftest ^:test-refresh/focus-not activitie-test
+(t/deftest ^:test-refresh/focus-not activitie-test
   (let[
        the-machine {:id :activity-test
                     :initial :start
@@ -366,12 +369,12 @@
                                               :sub2 {:on {:next :sub1}
                                                      :activities [:act-1 :act-2]}}}
                              :done {:type :final}}}
-       state (start-machine the-machine)
-       _ (validate {:value {:start :sub1} :actions [(create-activities-event [:act-1])]} state)
-       state (transition-machine the-machine state :next)
-       _ (validate {:value {:start :sub2} :actions [(create-activities-event [:act-1 :act-2])]} state)
-       state (transition-machine the-machine state :next)
-       _ (validate {:value {:start :sub1} :actions [(create-activities-cleanup-event[:act-1 :act-2])]} state)
-       state (transition-machine the-machine state :done)
-       _ (validate {:value :done :actions [(create-activities-cleanup-event[:act-1])(done-event ".")]} state)
+       state (sl/start-machine the-machine)
+       _ (validate {:value {:start :sub1} :actions [(sl/create-activities-event [:act-1])]} state)
+       state (sl/transition-machine the-machine state :next)
+       _ (validate {:value {:start :sub2} :actions [(sl/create-activities-event [:act-1 :act-2])]} state)
+       state (sl/transition-machine the-machine state :next)
+       _ (validate {:value {:start :sub1} :actions [(sl/create-activities-cleanup-event[:act-1 :act-2])]} state)
+       state (sl/transition-machine the-machine state :done)
+       _ (validate {:value :done :actions [(sl/create-activities-cleanup-event[:act-1])(sl/done-event "." nil)]} state)
        ]))

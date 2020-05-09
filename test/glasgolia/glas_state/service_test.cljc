@@ -1,7 +1,8 @@
 (ns glasgolia.glas-state.service-test
-  (:require [clojure.test :refer :all]
+  (:require [#?(:clj clojure.test
+                :cljs cljs.test) :as t]
             [glasgolia.glas-state.stateless :as sl]
-            [glasgolia.glas-state.core :refer :all]))
+            [glasgolia.glas-state.core :as gs]))
 
 ;(def the-machine
 ;  {:initial :a

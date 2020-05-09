@@ -1,5 +1,6 @@
 (ns glasgolia.glas-state.examples.invoke
-  (:require [clojure.test :refer :all]
+  (:require [#?(:clj clojure.test
+                :cljs cljs.test) :as t]
             [glasgolia.glas-state.core :as gs]))
 
 
